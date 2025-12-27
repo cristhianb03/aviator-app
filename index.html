@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aviator Pro Panel</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-white font-sans">
+    <div class="p-5 max-w-md mx-auto">
+        <header class="text-center mb-8">
+            <h1 class="text-2xl font-black text-blue-500">AVIATOR ANALYZER</h1>
+            <p class="text-xs text-gray-400">Datos en tiempo real</p>
+        </header>
+
+        <div class="bg-slate-800 rounded-3xl p-8 text-center shadow-xl border border-slate-700">
+            <p class="text-sm text-gray-400 uppercase tracking-widest">Último Crash</p>
+            <div id="multiplier" class="text-6xl font-black my-4 text-white">--</div>
+            <div id="status" class="inline-block px-4 py-1 rounded-full text-xs font-bold bg-gray-700">CONECTANDO...</div>
+        </div>
+
+        <div class="mt-6 grid grid-cols-2 gap-4">
+            <div class="bg-slate-800 p-4 rounded-2xl text-center">
+                <p class="text-xs text-gray-400">Prob. 2.0x</p>
+                <p id="prob" class="text-xl font-bold text-green-400">--%</p>
+            </div>
+            <div class="bg-slate-800 p-4 rounded-2xl text-center">
+                <p class="text-xs text-gray-400">Sugerencia</p>
+                <p id="sugg" class="text-xl font-bold text-blue-400">ESPERAR</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function updateData() {
+            try {
+                // Reemplaza con la URL de tu servidor FastAPI cuando lo subas
+                const response = await fetch('http://tu-ip-servidor:8000/data');
+                const data = await response.json();
+                
+                document.getElementById('multiplier').innerText = data.valor + 'x';
+                
+                // Lógica visual simple
+                if(data.valor < 2) {
+                    document.getElementById('multiplier').className = "text-6xl font-black my-4 text-blue-400";
+                } else {
+                    document.getElementById('multiplier').className = "text-6xl font-black my-4 text-purple-500";
+                }
+            } catch (e) { console.log("Error buscando datos"); }
+        }
+        setInterval(updateData, 2000); // Actualiza cada 2 segundos
+    </script>
+</body>
+</html>
