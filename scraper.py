@@ -24,6 +24,8 @@ def run():
 
         print("🔗 Conectando al Casino...")
         page.goto("https://1wmxk.com/casino/play/v_spribe:aviator", wait_until="networkidle")
+        page.screenshot(path="resultado.png") 
+        print("📸 Captura guardada como resultado.png")
 
         ultimo_valor = None
         # Selector universal de los globos de resultados
@@ -61,3 +63,4 @@ def run():
 
 if __name__ == "__main__":
     run()
+
