@@ -3,64 +3,57 @@ import requests
 from playwright.sync_api import sync_playwright
 from playwright_stealth import Stealth
 
-# AQUÍ ES DONDE SE DEFINE LA RUTA AL SERVIDOR
-# Como el Scraper y el Servidor están en la misma máquina de Google, usamos localhost
 URL_SERVIDOR = "http://localhost:8000/nuevo-resultado"
 
 def run():
     with sync_playwright() as p:
-        print("🚀 Iniciando Ojo Invisible en Google Cloud...")
+        # Usamos argumentos para deshabilitar detecciones comunes de Linux
+        browser = p.chromium.launch(headless=True, args=[
+            '--disable-blink-features=AutomationControlled',
+            '--no-sandbox',
+            '--disable-setuid-sandbox'
+        ])
         
-        # Lanzamiento invisible (Headless)
-        browser = p.chromium.launch(headless=True) 
+        # Simulamos una pantalla de celular para que el casino sea menos estricto
         context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1",
+            viewport={'width': 375, 'height': 667},
+            device_scale_factor=2,
+            is_mobile=True,
+            has_touch=True
         )
-        page = context.new_page()
         
-        # Sigilo para evitar bloqueos
+        page = context.new_page()
         stealth = Stealth()
         stealth.apply_stealth_sync(page)
 
-        print("🔗 Conectando al Casino...")
-        page.goto("https://1wmxk.com/casino/play/v_spribe:aviator", wait_until="networkidle")
-        page.screenshot(path="resultado.png") 
-        print("📸 Captura guardada como resultado.png")
+        print("🔗 Intentando entrar por bypass móvil...")
+        try:
+            page.goto("https://1wmxk.com/casino/play/v_spribe:aviator", wait_until="domcontentloaded", timeout=60000)
+            time.sleep(10) # Esperamos 10 segundos a que cargue el iframe
+            page.screenshot(path="verificacion.png") # Foto para ver si hay error
+        except Exception as e:
+            print(f"❌ Error de carga: {e}")
 
-        ultimo_valor = None
-        # Selector universal de los globos de resultados
-        sel = "[class*='bubble-multiplier'], [class*='multiplier'], .stats-list div"
+        ultimo_v = None
+        # Selector más agresivo
+        sel = ".bubble-multiplier, [class*='multiplier'], .stats-list div"
 
         while True:
             try:
-                for frame in page.frames:
-                    el = frame.locator(sel).first
+                # Escaneamos todos los frames (Aviator es un iframe dentro de otro)
+                for f in page.frames:
+                    el = f.locator(sel).first
                     if el.is_visible():
-                        # Limpiamos el texto para obtener solo el número
                         t = el.inner_text().lower().replace('x','').replace(',','.').strip()
                         v = float(t)
-                        
-                        # Si el valor cambió, lo enviamos
-                        if v != ultimo_valor:
-                            
-                            # ==========================================
-                            # ESTA ES LA OPCIÓN QUE PREGUNTASTE:
-                            # Enviamos el dato al "Cerebro" (servidor.py)
-                            try:
-                                requests.post(URL_SERVIDOR, json={"valor": v}, timeout=1)
-                                print(f"🎯 Capturado y enviado: {v}x")
-                            except Exception as e:
-                                print(f"⚠️ Error enviando al servidor: {e}")
-                            # ==========================================
-                            
-                            ultimo_valor = v
+                        if v != ultimo_v:
+                            requests.post(URL_SERVIDOR, json={"valor": v}, timeout=2)
+                            ultimo_v = v
+                            print(f"🎯 Capturado: {v}x")
                         break
-            except: 
-                pass
-            
-            # Revisa cada medio segundo
+            except: pass
             time.sleep(0.5)
 
 if __name__ == "__main__":
     run()
-
