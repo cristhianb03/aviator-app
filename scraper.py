@@ -14,7 +14,8 @@ def run():
             return
 
         u = None
-        sel = "[class*='bubble-multiplier'], [class*='multiplier'], .stats-list div"
+        # Selector Universal 2025
+        sel = "[class*='bubble-multiplier'], [class*='multiplier'], [class*='payout'], .stats-list div, .history-item"
 
         while True:
             try:
@@ -32,3 +33,4 @@ def run():
             except: pass
             time.sleep(0.4)
 run()
+
