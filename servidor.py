@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import statistics
 import collections
-import math
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -15,45 +14,18 @@ memoria = {
     "ultimo_valor": 0.0,
     "sugerencia": "⏳ CALIBRANDO IA",
     "confianza": "0%",
-    "radar_rosa": "0%", # AHORA ES UN PORCENTAJE DE PROBABILIDAD
+    "radar_rosa": "0%",
     "tp_s": "--",
     "tp_e": "--",
     "fase": "APRENDIENDO",
     "historial_visual": []
 }
 
-# --- MOTOR ROSA AVANZADO ---
-def calcular_probabilidad_rosa(hist):
-    if len(hist) < 30: return 0
-    
-    # 1. Distancia desde el último 10x
-    distancia = 0
-    for v in hist:
-        if v >= 10.0: break
-        distancia += 1
-    
-    # 2. Déficit de Dispersión (¿Qué tanto ha pagado el casino recientemente?)
-    # El RTP teórico es del 97%. Calculamos el RTP real de los últimos 50 juegos.
-    promedio_real = statistics.mean(hist[:50])
-    # Si el promedio real es menor a 2.5, el casino está acumulando (Caja llena).
-    deficit_caja = max(0, 3.0 - promedio_real)
-    
-    # 3. Lógica de Dispersión (Probabilidad Rosa)
-    # Un Rosa suele salir cada 40-70 rondas. 
-    # Si la distancia es > 45 y la caja está llena (deficit alto), la probabilidad explota.
-    prob_base = (distancia / 60) * 100
-    prob_final = prob_base + (deficit_caja * 15)
-    
-    # Penalización: Si salió un Rosa hace menos de 5 rondas, la probabilidad es casi 0 (Drenaje)
-    if distancia < 5: prob_final = prob_final * 0.1
-
-    return min(round(prob_final), 99)
-
-# --- MOTOR DE GRAFOS PARA 1.50x ---
-def categorizar(v):
-    if v < 1.2: return "危险_Peligro"
-    if v < 1.5: return "低_Bajo"
-    return "赢_Exito"
+# --- MOTOR DE GRAFOS V33 ---
+# Categoría 0: < 1.50 (Pérdida para tu objetivo)
+# Categoría 1: >= 1.50 (Éxito para tu objetivo)
+def categorizar_estricto(v):
+    return "EXITO" if v >= 1.50 else "FALLO"
 
 grafo = collections.defaultdict(lambda: collections.Counter())
 
@@ -66,53 +38,71 @@ async def recibir_resultado(res: Resultado):
     valor = res.valor
     memoria["ultimo_valor"] = valor
     memoria["historial_visual"].insert(0, valor)
-    if len(memoria["historial_visual"]) > 150: memoria["historial_visual"].pop()
+    if len(memoria["historial_visual"]) > 200: memoria["historial_visual"].pop()
 
     hist = memoria["historial_visual"]
     if len(hist) < 20:
-        memoria["sugerencia"] = f"📈 RECOPILANDO DATOS ({len(hist)}/20)"
+        memoria["sugerencia"] = f"📊 RECOLECTANDO ({len(hist)}/20)"
         return {"status": "ok"}
 
-    # 1. ACTUALIZAR PROBABILIDAD ROSA
-    prob_rosa = calcular_probabilidad_rosa(hist)
-    memoria["radar_rosa"] = f"{prob_rosa}%"
-
-    # 2. LÓGICA DE GRAFOS PARA RETIRO SEGURO (MÍNIMO 1.50x)
+    # 1. ACTUALIZAR MAPA DE GRAFOS
     for i in range(len(hist) - 4):
-        nodo = tuple(categorizar(x) for x in hist[i+1:i+4])
-        resultado = categorizar(hist[i])
+        # Nodo: Secuencia de 3 resultados previos
+        nodo = tuple(categorizar_estricto(x) for x in hist[i+1:i+4])
+        resultado = categorizar_estricto(hist[i])
         grafo[nodo][resultado] += 1
 
-    situacion_actual = tuple(categorizar(x) for x in hist[:3])
+    # 2. CONSULTAR ESTADO ACTUAL
+    situacion_actual = tuple(categorizar_estricto(x) for x in hist[:3])
     posibilidades = grafo[situacion_actual]
     total_muestras = sum(posibilidades.values())
     
-    # Probabilidad de que el siguiente sea > 1.50x
-    prob_exito = (posibilidades["赢_Exito"] / total_muestras * 100) if total_muestras > 0 else 50
+    # Probabilidad real de superar 1.50x basada en el historial
+    prob_exito = (posibilidades["EXITO"] / total_muestras * 100) if total_muestras > 0 else 0
 
-    # 3. SCORE FINAL DE CONFIANZA
-    score = (prob_exito * 0.7) + (30 if valor < 1.15 else 0)
-    confianza_f = min(round(score), 99)
-    memoria["confianza"] = f"{confianza_f}%"
-
-    # 4. DETERMINACIÓN DE VALORES (ESTRICTO 1.50x+)
-    mediana = statistics.median(hist[:25])
+    # 3. FILTRO DE VOLATILIDAD (FILTRO DE SEGURIDAD)
+    # Si los últimos 10 juegos tienen un promedio muy bajo, el mercado está en "Recaudación"
+    media_reciente = statistics.mean(hist[:10])
     
-    if confianza_f >= 75:
-        # El retiro seguro ahora es REALMENTE seguro porque usa la mediana y prob de grafos
+    # 4. CALCULO DE RADAR ROSA (Basado en déficit)
+    distancia_rosa = 0
+    for v in hist:
+        if v >= 10.0: break
+        distancia_rosa += 1
+    prob_rosa = min(99, (distancia_rosa * 1.5) + (20 if media_reciente < 2.0 else 0))
+    memoria["radar_rosa"] = f"{round(prob_rosa)}%"
+
+    # --- LÓGICA DE SEÑAL DE ALTA ASERTIVIDAD ---
+    # Solo damos señal si la confianza del GRAFO es > 75% Y la media reciente no es crítica
+    if prob_exito >= 78 and media_reciente > 1.30:
+        # Calculamos el Retiro Seguro (Mínimo 1.50x)
+        mediana = statistics.median(hist[:20])
         val_s = round(max(1.50, mediana * 0.85), 2)
-        val_e = round(max(val_s * 2, mediana * 1.8), 2)
-        
-        memoria["sugerencia"] = "🔥 ENTRADA CONFIRMADA"
+        val_e = round(max(val_s * 2.1, mediana * 1.8), 2)
+
+        memoria["sugerencia"] = "🔥 ENTRADA FUERTE"
+        memoria["confianza"] = f"{round(prob_exito)}%"
         memoria["tp_s"] = f"{val_s}x"
         memoria["tp_e"] = f"{val_e}x"
-        memoria["fase"] = "🚀 DISPERSIÓN ACTIVA"
-    else:
-        memoria["sugerencia"] = "⏳ ESPERANDO SEÑAL"
+        memoria["fase"] = "🚀 NODO DE ÉXITO"
+    
+    # Si hay tendencia pero no llega al 78% de seguridad
+    elif prob_exito >= 50:
+        memoria["sugerencia"] = "⏳ ESPERANDO CONFIRMACIÓN"
+        memoria["confianza"] = f"{round(prob_exito)}%"
         memoria["tp_s"] = "--"
         memoria["tp_e"] = "--"
-        memoria["fase"] = "📊 RECAUDACIÓN" if valor < 2.0 else "⚖️ MERCADO MIXTO"
+        memoria["fase"] = "⚖️ TRANSICIÓN"
+    
+    else:
+        # BLOQUEO DE SEGURIDAD
+        memoria["sugerencia"] = "🛑 NO ENTRAR"
+        memoria["confianza"] = f"{round(prob_exito)}%"
+        memoria["tp_s"] = "--"
+        memoria["tp_e"] = "--"
+        memoria["fase"] = "⚠️ RECAUDACIÓN"
 
+    print(f"[{valor}x] Prob 1.50x: {prob_exito:.1f}% | Fase: {memoria['fase']}")
     return {"status": "ok"}
 
 if __name__ == "__main__":
