@@ -12,7 +12,7 @@ class Resultado(BaseModel):
 
 memoria = {
     "ultimo_valor": 0.0,
-    "sugerencia": "⏳ ANALIZANDO GRAFOS",
+    "sugerencia": "⏳ CALIBRANDO IA",
     "confianza": "0%",
     "radar_rosa": "0%",
     "tp_s": "--",
@@ -21,11 +21,11 @@ memoria = {
     "historial_visual": []
 }
 
-# IA de Grafos: Analizamos si el patrón termina en EXITO (>=1.50) o FALLO (<1.50)
+# IA de Grafos: Solo éxito si >= 1.50
 grafo = collections.defaultdict(lambda: collections.Counter())
 
 def categorizar(v):
-    return "OK" if v >= 1.50 else "FAIL"
+    return "EXITO" if v >= 1.50 else "FALLO"
 
 @app.get("/data")
 async def get_data():
@@ -40,7 +40,7 @@ async def recibir_resultado(res: Resultado):
 
     hist = memoria["historial_visual"]
     if len(hist) < 15:
-        memoria["sugerencia"] = "📊 RECOLECTANDO..."
+        memoria["sugerencia"] = "📊 CARGANDO..."
         return {"status": "ok"}
 
     # --- 1. ENTRENAMIENTO DEL GRAFO ---
@@ -49,55 +49,49 @@ async def recibir_resultado(res: Resultado):
         resultado = categorizar(hist[i])
         grafo[nodo][resultado] += 1
 
-    # --- 2. ANÁLISIS DE MERCADO (SALUD) ---
-    # Si la media de los últimos 5 es muy baja, el casino está "succionando"
-    media_reciente = statistics.mean(hist[:5])
+    # --- 2. ANÁLISIS DE MOMENTUM (PARA ATRAPAR EL 40x) ---
+    rondas_sin_rosa = 0
+    for v in hist:
+        if v >= 10.0: break
+        rondas_sin_rosa += 1
     
+    # Si llevamos mucho tiempo sin un rosa, la presión de explosión sube
+    presion_explosion = min(99, rondas_sin_rosa * 2.5)
+    memoria["radar_rosa"] = f"{round(presion_explosion)}%"
+
     # --- 3. CONSULTA DE PROBABILIDAD IA ---
     situacion_actual = tuple(categorizar(x) for x in hist[:3])
     posibilidades = grafo[situacion_actual]
     total = sum(posibilidades.values())
-    prob_exito = (posibilidades["OK"] / total * 100) if total > 0 else 0
+    prob_exito_150 = (posibilidades["EXITO"] / total * 100) if total > 0 else 0
 
-    # --- 4. LÓGICA DE SEGURIDAD EXTREMA ---
-    # Si la media es bajísima o hubo dos 1.0x recientes, bajamos confianza a 0
-    if media_reciente < 1.35 or (hist[0] < 1.15 and hist[1] < 1.15):
-        score_final = 5 # Peligro inminente
+    # --- 4. CÁLCULO DE TARGETS CON SUELO 1.50x ---
+    mediana = statistics.median(hist[:20])
+    
+    # Filtro estricto: El Retiro Seguro NUNCA será menor a 1.50
+    val_s = round(max(1.50, mediana * 0.92), 2)
+    
+    # Ganancia alta agresiva si el radar rosa está caliente
+    if presion_explosion > 70:
+        val_e = round(max(5.00, mediana * 3.0), 2)
+        memoria["fase"] = "🚀 BUSCANDO ROSA"
     else:
-        score_final = prob_exito
+        val_e = round(max(val_s * 2.1, 3.00), 2)
+        memoria["fase"] = "⚖️ ESTABLE"
 
-    memoria["confianza"] = f"{round(score_final)}%"
-
-    # --- 5. DETERMINACIÓN DE SEÑAL (SUELO 1.50x) ---
-    mediana = statistics.median(hist[:25])
-    val_s = round(max(1.50, mediana * 0.90), 2)
-    val_e = round(max(val_s * 1.8, mediana * 1.6), 2)
-
-    if score_final >= 85 and media_reciente > 1.45:
-        # SEÑAL MAESTRA
-        memoria["sugerencia"] = "🔥 ENTRADA CONFIRMADA"
-        memoria["fase"] = "🚀 ALTA PROBABILIDAD"
+    # --- 5. LÓGICA DE SEGURIDAD (CUÁNDO MOSTRAR) ---
+    # Si la probabilidad de llegar a 1.50 es baja (< 55%) o hay succión extrema
+    if prob_exito_150 < 55 or (hist[0] < 1.20 and hist[1] < 1.20):
+        memoria["sugerencia"] = "❌ RIESGO DE PÉRDIDA"
+        memoria["confianza"] = f"{round(prob_exito_150)}%"
+        memoria["tp_s"] = "--"
+        memoria["tp_e"] = "--"
+    else:
+        # SEÑAL VÁLIDA
+        memoria["sugerencia"] = "🔥 ENTRADA FUERTE" if prob_exito_150 > 75 else "⚠️ POSIBLE SEÑAL"
+        memoria["confianza"] = f"{round(prob_exito_150)}%"
         memoria["tp_s"] = f"{val_s}x"
         memoria["tp_e"] = f"{val_e}x"
-    elif score_final < 30:
-        # AVISO DE PÉRDIDA
-        memoria["sugerencia"] = "❌ RIESGO DE PÉRDIDA"
-        memoria["fase"] = "⚠️ RECAUDACIÓN"
-        memoria["tp_s"] = "--"
-        memoria["tp_e"] = "--"
-    else:
-        # ESTADO NEUTRO
-        memoria["sugerencia"] = "⏳ ESPERANDO PATRÓN"
-        memoria["fase"] = "⚖️ MERCADO MIXTO"
-        memoria["tp_s"] = "--"
-        memoria["tp_e"] = "--"
-
-    # Radar Rosa
-    dist = 0
-    for v in hist:
-        if v >= 10.0: break
-        dist += 1
-    memoria["radar_rosa"] = f"{min(99, dist * 2)}%"
 
     return {"status": "ok"}
 
