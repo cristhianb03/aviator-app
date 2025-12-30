@@ -9,14 +9,15 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 class Resultado(BaseModel):
     valor: float
 
-# MEMORIA DE ALTA CAPACIDAD (100 registros)
 memoria = {
     "ultimo_valor": 0.0,
-    "sugerencia": "⏳ CALIBRANDO",
+    "sugerencia": "⏳ ANALIZANDO",
     "confianza": "0%",
+    "prob_verde": "0%", # NUEVO: Probabilidad de que el siguiente sea > 2.0x
+    "radar_rosa": "FRÍO", # NUEVO: Estado del premio rosa (>10x)
     "tp_seguro": "--",
     "tp_explosivo": "--",
-    "fase": "ANALIZANDO",
+    "fase": "CALIBRANDO",
     "historial": []
 }
 
@@ -29,84 +30,76 @@ async def recibir_resultado(res: Resultado):
     valor = res.valor
     memoria["ultimo_valor"] = valor
     memoria["historial"].append(valor)
-    
-    # Mantenemos 100 valores para una base estadística de alta precisión
-    if len(memoria["historial"]) > 100: 
-        memoria["historial"].pop(0)
+    if len(memoria["historial"]) > 100: memoria["historial"].pop(0)
 
     hist = memoria["historial"]
-    if len(hist) < 15: 
-        memoria["sugerencia"] = f"⏳ RECOLECTANDO ({len(hist)}/15)"
+    if len(hist) < 10: 
+        memoria["sugerencia"] = "⏳ RECOLECTANDO DATOS"
         return {"status": "ok"}
 
-    # --- MOTOR ESTADÍSTICO Engine X ---
+    # --- MOTOR DE PREDICCIÓN DE SALTO (SIGUIENTE VALOR ALTO) ---
     
-    # 1. Análisis de Ventanas (Corto vs Largo Plazo)
-    ventana_corta = hist[-5:]   # Lo que está pasando YA
-    ventana_media = hist[-20:]  # La tendencia del ciclo
-    ventana_larga = hist        # El comportamiento del día
-    
-    media_corta = statistics.mean(ventana_corta)
-    media_larga = statistics.mean(ventana_larga)
-    mediana_media = statistics.median(ventana_media)
-    
-    # 2. Medición de Volatilidad (Riesgo real)
-    # Si la desviación es alta, el avión es impredecible.
-    desviacion = statistics.stdev(ventana_media)
-
-    # 3. Índice de Presión (IPP)
-    # Si el IPP es > 1, el casino está recaudando. Si es < 1, está pagando.
-    ipp = media_larga / media_corta if media_corta > 0 else 1
-
-    # 4. Lógica de Rachas de Supervivencia
-    azules = 0
+    # 1. Análisis de Deuda (Déficit de Verdes)
+    # Si han salido muchos azules seguidos, la probabilidad de verde sube.
+    recientes = hist[-10:]
+    azules_seguidos = 0
     for v in reversed(hist):
-        if v < 2.0: azules += 1
+        if v < 2.0: azules_seguidos += 1
         else: break
-
-    # --- CÁLCULO DE TARGETS DINÁMICOS ---
-    # Usamos un buffer de seguridad que crece si la volatilidad es alta
-    # Si el juego está muy inestable, el buffer quita más valor para asegurar.
-    buffer_seguridad = 0.95 - (desviacion * 0.01)
-    buffer_seguridad = max(0.80, min(buffer_seguridad, 0.96))
-
-    # Seguro: Basado en la estabilidad de la mediana reciente
-    t_s = round(mediana_media * 0.85 * buffer_seguridad, 2)
     
-    # Explosivo: Basado en la recuperación del IPP
-    # Si hay mucha presión (muchos azules), el explosivo busca el rebote a la media larga
-    t_e = round(media_larga * 0.90 * (1.1 if ipp > 1.5 else 1.0), 2)
+    # Probabilidad base de verde (basada en el promedio de los últimos 10)
+    # Si solo el 20% han sido verdes, la probabilidad del siguiente sube por compensación.
+    verdes_en_ventana = len([v for v in recientes if v >= 2.0])
+    prob_v = (azules_seguidos * 15) + (50 - (verdes_en_ventana * 5))
+    if valor < 1.15: prob_v += 30 # Efecto resorte
+    
+    memoria["prob_verde"] = f"{min(max(prob_v, 10), 98)}%"
 
-    # --- DETERMINACIÓN DE FASE Y SCORE ---
-    score = (azules * 20) + (ipp * 15)
-    if valor < 1.10: score += 40 # Bono de resorte crítico
+    # 2. Radar de Rosa (Premios > 10x)
+    # Contamos cuántas rondas han pasado desde el último 10x
+    rondas_sin_rosa = 0
+    for v in reversed(hist):
+        if v < 10.0: rondas_sin_rosa += 1
+        else: break
+    
+    if rondas_sin_rosa > 35: memoria["radar_rosa"] = "🔥 MUY ALTO"
+    elif rondas_sin_rosa > 20: memoria["radar_rosa"] = "⚠️ MEDIO"
+    else: memoria["radar_rosa"] = "❄️ BAJO"
 
-    if media_corta > media_larga:
-        memoria["fase"] = "🚀 EXPANSIÓN ACTIVA"
-        score += 20
-    elif ipp > 1.8:
-        memoria["fase"] = "⚡ ALTA TENSIÓN (REBOTE INMINENTE)"
+    # --- 3. CÁLCULO DE TARGETS (Ajustados por el Score de Salto) ---
+    mediana = statistics.median(hist[-20:])
+    
+    # Si la probabilidad de verde es alta (>70%), somos más valientes con los números
+    agresividad = 1.15 if prob_v > 70 else 0.95
+    
+    t_s = round(max(1.28, (mediana * 0.82) * agresividad), 2)
+    
+    # El explosivo ahora es inteligente: si el radar rosa está caliente, sugiere un valor alto
+    if memoria["radar_rosa"] == "🔥 MUY ALTO":
+        t_e = round(max(5.00, mediana * 3.5), 2)
     else:
-        memoria["fase"] = "📊 ESTABILIDAD"
+        t_e = round(max(t_s * 1.5, mediana * 1.3), 2)
 
-    # --- SALIDA FINAL SINCRONIZADA ---
-    score_final = min(round(score), 99)
-    memoria["confianza"] = f"{score_final}%"
+    # --- 4. ACTUALIZACIÓN DE ESTADOS ---
+    score_final = prob_v
+    memoria["confianza"] = f"{min(score_final, 99)}%"
 
     if score_final >= 80:
         memoria["sugerencia"] = "🔥 ENTRADA FUERTE"
-        memoria["tp_seguro"] = f"{max(1.25, t_s)}x"
-        memoria["tp_explosivo"] = f"{max(t_s + 0.5, t_e)}x"
-    elif score_final >= 45:
+        memoria["tp_seguro"] = f"{t_s}x"
+        memoria["tp_explosivo"] = f"{t_e}x"
+        memoria["fase"] = "🚀 SALTO INMINENTE"
+    elif score_final >= 50:
         memoria["sugerencia"] = "⚠️ POSIBLE SEÑAL"
-        memoria["tp_seguro"] = f"{max(1.20, t_s)}x"
+        memoria["tp_seguro"] = f"{t_s}x"
         memoria["tp_explosivo"] = "--"
+        memoria["fase"] = "⚖️ MERCADO ESTABLE"
     else:
-        memoria["sugerencia"] = "⏳ BUSCANDO PATRÓN"
+        memoria["sugerencia"] = "⏳ ESPERANDO PATRÓN"
         memoria["tp_seguro"] = "--"
         memoria["tp_explosivo"] = "--"
+        memoria["fase"] = "📊 RECAUDACIÓN"
 
-    print(f"[{valor}x] IPP: {ipp:.2f} | Volatilidad: {desviacion:.2f} | Score: {score_final}%")
     return {"status": "ok"}
 
 if __name__ == "__main__":
