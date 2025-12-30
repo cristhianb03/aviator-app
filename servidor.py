@@ -4,12 +4,19 @@ from pydantic import BaseModel
 import statistics
 
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# PERMITIR CONEXIÓN DESDE GITHUB
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class Resultado(BaseModel):
     valor: float
 
-# MEMORIA MAESTRA UNIFICADA
+# MEMORIA MAESTRA SINCRONIZADA
 memoria = {
     "ultimo_valor": 0.0,
     "sugerencia": "⏳ ANALIZANDO",
@@ -31,55 +38,35 @@ async def recibir_resultado(res: Resultado):
     memoria["historial"].append(valor)
     if len(memoria["historial"]) > 50: memoria["historial"].pop(0)
 
-    # --- ESTA LÍNEA ES LA QUE MOSTRARÁ EL NÚMERO EN EL LOG ---
-    print(f"🎯 DATO ACTUALIZADO EN EL CEREBRO: {valor}x")
-    
-    # ... resto de tu lógica de predicción ...
-    # (Asegúrate de que la lógica de score y targets esté debajo)
-    
-    return {"status": "ok"}
+    print(f"🎯 Recibido: {valor}x")
 
-    # --- MOTOR ESTADÍSTICO ---
-    recientes = hist[-10:]
+    hist = memoria["historial"]
+    if len(hist) < 5: return {"status": "ok"}
+
+    # --- LÓGICA DE CÁLCULO ---
     mediana = statistics.median(hist)
-    verdes_ratio = len([v for v in recientes if v >= 2.0]) / 10
-    
-    azules_seguidos = 0
+    azules = 0
     for v in reversed(hist):
-        if v < 2.0: azules_seguidos += 1
+        if v < 2.0: azules += 1
         else: break
 
-    # --- DETERMINACIÓN DE FASE Y SCORE ---
-    score = 0
-    if verdes_ratio >= 0.6:
-        memoria["fase"] = "🚀 EXPANSIÓN"
-        score = 85 + (verdes_ratio * 10)
-        agresividad = 1.2
-    elif azules_seguidos >= 2:
-        memoria["fase"] = "🔄 REBOTE"
-        score = (azules_seguidos * 25) + (30 if valor < 1.15 else 0)
-        agresividad = 0.95
-    else:
-        memoria["fase"] = "⚖️ ESTABLE"
-        score = 40 + (verdes_ratio * 30)
-        agresividad = 0.9
-
-    # --- CÁLCULO DE TARGETS (SOLO DOS) ---
-    buffer = 0.94 # Seguridad del 6%
-    t_seguro = round(max(1.25, (mediana * 0.85) * agresividad * buffer), 2)
-    t_explosivo = round(max(t_seguro * 1.5, (mediana * 1.5) * agresividad * buffer), 2)
-
-    # --- ACTUALIZACIÓN DE MEMORIA ---
+    # SCORE
+    score = (azules * 25) + (35 if valor < 1.2 else 0)
     score_final = min(round(score), 99)
     memoria["confianza"] = f"{score_final}%"
-    
+
+    # TARGETS DINÁMICOS
+    t_s = round(max(1.25, mediana * 0.85), 2)
+    t_e = round(max(t_s * 1.5, mediana * 1.4), 2)
+
+    # ESTADOS
     if score_final >= 75:
         memoria["sugerencia"] = "🔥 ENTRADA CONFIRMADA"
-        memoria["tp_seguro"] = f"{t_seguro}x"
-        memoria["tp_explosivo"] = f"{t_explosivo}x"
+        memoria["tp_seguro"] = f"{t_s}x"
+        memoria["tp_explosivo"] = f"{t_e}x"
     elif score_final >= 40:
         memoria["sugerencia"] = "⚠️ POSIBLE SEÑAL"
-        memoria["tp_seguro"] = f"{t_seguro}x"
+        memoria["tp_seguro"] = f"{t_s}x"
         memoria["tp_explosivo"] = "--"
     else:
         memoria["sugerencia"] = "⏳ BUSCANDO PATRÓN"
@@ -91,4 +78,3 @@ async def recibir_resultado(res: Resultado):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
