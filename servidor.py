@@ -9,16 +9,16 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 class Resultado(BaseModel):
     valor: float
 
-# Estructura de memoria exacta para el index
+# DICCIONARIO MAESTRO: Estos nombres deben ser IGUALES en el HTML
 memoria = {
     "ultimo_valor": 0.0,
     "sugerencia": "⏳ ANALIZANDO",
     "confianza": "0%",
     "radar_rosa": "❄️ BAJO",
-    "fase": "ESTABILIZANDO",
+    "fase": "ESCANEO",
     "tp_s": "--",
     "tp_e": "--",
-    "historial_visual": []
+    "historial_visual": [0.0]
 }
 
 @app.get("/data")
@@ -35,9 +35,9 @@ async def recibir_resultado(res: Resultado):
     if len(memoria["historial_visual"]) > 15:
         memoria["historial_visual"].pop()
 
-    hist = memoria["historial_visual"]
-    if len(hist) < 5:
-        memoria["sugerencia"] = f"⏳ CARGANDO {len(hist)}/5"
+    hist = [v for v in memoria["historial_visual"] if v > 0]
+    if len(hist) < 3:
+        memoria["sugerencia"] = "⏳ RECOLECTANDO"
         return {"status": "ok"}
 
     # LÓGICA DE CÁLCULO
@@ -56,13 +56,14 @@ async def recibir_resultado(res: Resultado):
     for v in hist:
         if v < 10.0: rondas_sin_rosa += 1
         else: break
-    memoria["radar_rosa"] = "🔥 ALTO" if rondas_sin_rosa > 25 else "❄️ BAJO"
+    memoria["radar_rosa"] = "🔥 ALTO" if rondas_sin_rosa > 20 else "❄️ BAJO"
 
     # Targets
     agresividad = 1.15 if score_final > 70 else 0.95
     val_s = round(max(1.25, (mediana * 0.82) * agresividad), 2)
     val_e = round(max(val_s * 1.6, (mediana * 1.5) * agresividad), 2)
 
+    # Estados
     if score_final >= 75:
         memoria["sugerencia"] = "🔥 ENTRADA CONFIRMADA"
         memoria["fase"] = "🚀 MOMENTUM"
