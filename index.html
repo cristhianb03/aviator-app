@@ -3,39 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aviator Master Unified - V17</title>
+    <title>Aviator Master Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
-        
-        body { 
-            font-family: 'Inter', sans-serif; 
-            background-color: #050608; 
-            color: white;
-            background-image: radial-gradient(circle at 50% 0%, #1e293b 0%, #050608 100%);
-        }
-
-        .glow-signal { animation: glow 2s infinite; }
-        @keyframes glow { 
-            0%, 100% { box-shadow: 0 0 15px rgba(34, 197, 94, 0.1); } 
-            50% { box-shadow: 0 0 40px rgba(34, 197, 94, 0.4); } 
-        }
-
-        .glass-card {
-            background: rgba(15, 18, 25, 0.8);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-        }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;900&display=swap');
+        body { font-family: 'Inter', sans-serif; background: #0b0e14; color: white; }
+        .bg-pro { background: radial-gradient(circle at 50% 0%, #1e293b 0%, #0b0e14 100%); }
+        .signal-glow { animation: glow 2s infinite; }
+        @keyframes glow { 0%, 100% { box-shadow: 0 0 20px rgba(34, 197, 94, 0.2); } 50% { box-shadow: 0 0 40px rgba(34, 197, 94, 0.5); } }
     </style>
 </head>
-<body class="min-h-screen flex flex-col items-center p-4">
+<body class="bg-pro min-h-screen flex flex-col items-center p-4">
 
     <div class="w-full max-w-md">
-        <!-- Header con Estado del Servidor -->
+        <!-- Header -->
         <header class="flex justify-between items-center py-6 mb-2">
             <div>
                 <h1 class="text-2xl font-black italic tracking-tighter">MASTER<span class="text-red-600">UNIFIED</span></h1>
-                <p id="fase" class="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Sincronizando...</p>
+                <p id="fase" class="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Calculando Fase...</p>
             </div>
             <div class="bg-zinc-900 border border-white/5 px-3 py-1 rounded-full flex items-center gap-2">
                 <div id="led" class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
@@ -43,15 +28,14 @@
             </div>
         </header>
 
-        <!-- Monitor Principal -->
-        <div class="glass-card rounded-[2.5rem] p-10 shadow-2xl text-center mb-6 relative overflow-hidden">
-            <p class="text-gray-500 text-[10px] font-bold uppercase tracking-[0.4em] mb-4">Telemetría en Tiempo Real</p>
+        <!-- Monitor -->
+        <div class="bg-zinc-900/90 rounded-[2.5rem] p-10 border border-white/5 shadow-2xl text-center mb-6 backdrop-blur-xl">
+            <p class="text-gray-600 text-[10px] font-bold uppercase tracking-[0.4em] mb-4">Telemetría en Vivo</p>
             <div id="val" class="text-8xl font-black mb-8 tracking-tighter">--</div>
 
-            <!-- Barra de Confianza -->
-            <div class="mb-8 px-2">
-                <div class="flex justify-between text-[10px] font-black uppercase mb-2">
-                    <span class="text-gray-600">Confianza Algorítmica</span>
+            <div class="mb-8 px-4">
+                <div class="flex justify-between text-[10px] font-bold uppercase mb-2">
+                    <span class="text-gray-500">Confianza</span>
                     <span id="prob" class="text-blue-500">0%</span>
                 </div>
                 <div class="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
@@ -59,88 +43,64 @@
                 </div>
             </div>
 
-            <!-- Caja de Recomendación -->
-            <div id="box" class="bg-white/5 rounded-3xl p-6 border border-white/5 transition-all duration-500">
-                <p id="sug" class="text-xl font-black italic uppercase tracking-wider text-white">Buscando Patrón</p>
+            <div id="box" class="bg-white/5 rounded-3xl p-6 border border-white/5 transition-all">
+                <p id="sug" class="text-xl font-black italic uppercase tracking-wider">Esperando Patrón</p>
             </div>
         </div>
 
-        <!-- Panel de Retiro (Targets) -->
+        <!-- Solo Dos Recomendaciones -->
         <div class="grid grid-cols-2 gap-4 mb-8">
-            <div class="glass-card p-6 rounded-[2.5rem] text-center">
+            <div class="bg-zinc-900/50 p-6 rounded-[2.5rem] border border-white/5 text-center">
                 <p class="text-[10px] text-green-500 font-bold uppercase mb-2">Retiro Seguro</p>
                 <p id="tp_s" class="text-4xl font-black text-white">--</p>
                 <p class="text-[9px] text-gray-600 mt-2 font-bold uppercase">Asertividad 93%</p>
             </div>
-            <div class="glass-card p-6 rounded-[2.5rem] text-center">
+            <div class="bg-zinc-900/50 p-6 rounded-[2.5rem] border border-white/5 text-center">
                 <p class="text-[10px] text-red-500 font-bold uppercase mb-2">Ganancia Alta</p>
                 <p id="tp_e" class="text-4xl font-black text-white">--</p>
                 <p class="text-[9px] text-gray-600 mt-2 font-bold uppercase">Momentum</p>
             </div>
         </div>
 
-        <!-- Botón de Actualización Manual -->
-        <button onclick="location.reload()" class="w-full py-5 bg-white text-black font-black text-xs uppercase tracking-widest rounded-[2rem] active:scale-95 transition-all shadow-xl">
+        <button onclick="location.reload()" class="w-full py-5 bg-white text-black font-black text-xs uppercase tracking-widest rounded-[2rem] active:scale-95 transition-all">
             Actualizar Sistema
         </button>
-
-        <p class="text-[9px] text-gray-600 text-center mt-8 uppercase tracking-[0.2em]">
-            Status: <span id="ping">--</span>ms | V.17 Master
-        </p>
     </div>
 
     <script>
-        // URL DE NGROK ACTUALIZADA (TERMINADA EN .DEV)
+        // TU URL DE NGROK
         const API_URL = "https://cordlike-dylan-unstrenuously.ngrok-free.dev/data";
 
         async function updateDashboard() {
-            const start = Date.now();
             try {
-                // FETCH CON EL HEADER DE BYPASS PARA NGROK
                 const response = await fetch(API_URL, {
-                    headers: {
-                        "ngrok-skip-browser-warning": "69420"
-                    }
+                    headers: { "ngrok-skip-browser-warning": "69420" }
                 });
+                const d = await response.json();
+
+                // Sincronización de Textos
+                document.getElementById('val').innerText = d.ultimo_valor + 'x';
+                document.getElementById('sug').innerText = d.sugerencia;
+                document.getElementById('prob').innerText = d.confianza;
+                document.getElementById('bar').style.width = d.confianza;
+                document.getElementById('fase').innerText = d.fase;
                 
-                if (!response.ok) throw new Error('Offline');
-                
-                const data = await response.json();
-                const latency = Date.now() - start;
+                // Mapeo correcto de las variables del servidor
+                document.getElementById('tp_s').innerText = d.tp_seguro;
+                document.getElementById('tp_e').innerText = d.tp_explosivo;
 
-                // Actualizar Textos
-                document.getElementById('val').innerText = data.ultimo_valor + 'x';
-                document.getElementById('sug').innerText = data.sugerencia;
-                document.getElementById('prob').innerText = data.confianza;
-                document.getElementById('bar').style.width = data.confianza;
-                document.getElementById('fase').innerText = data.fase;
-                document.getElementById('tp_s').innerText = data.tp_seguro;
-                document.getElementById('tp_e').innerText = data.tp_explosivo;
-                document.getElementById('ping').innerText = latency;
-
-                // Estado del LED
-                document.getElementById('led').className = "w-2 h-2 bg-green-500 rounded-full animate-pulse";
-
-                // Estilos según la señal
                 const box = document.getElementById('box');
-                if(data.sugerencia.includes("CONFIRMADA") || data.sugerencia.includes("ALTA")) {
-                    box.className = "bg-green-600 rounded-3xl p-6 border border-green-400 glow-signal transition-all duration-500";
-                } else if(data.sugerencia.includes("POSIBLE")) {
-                    box.className = "bg-yellow-600/30 rounded-3xl p-6 border border-yellow-500 transition-all duration-500";
+                const bar = document.getElementById('bar');
+                if(d.sugerencia.includes("CONFIRMADA")) {
+                    box.className = "bg-green-600 rounded-3xl p-6 border border-green-400 signal-glow transition-all";
+                    bar.className = "bg-green-500 h-full transition-all";
+                } else if(d.sugerencia.includes("POSIBLE")) {
+                    box.className = "bg-yellow-600/30 rounded-3xl p-6 border border-yellow-500 transition-all";
+                    bar.className = "bg-yellow-500 h-full transition-all";
                 } else {
-                    box.className = "bg-white/5 rounded-3xl p-6 border border-white/5 transition-all duration-500";
+                    box.className = "bg-white/5 rounded-3xl p-6 border border-white/5 transition-all";
+                    bar.className = "bg-blue-600 h-full transition-all";
                 }
-
-            } catch (error) {
-                console.error("Error de conexión:", error);
-                document.getElementById('led').className = "w-2 h-2 bg-red-600 rounded-full";
-                document.getElementById('fase').innerText = "⚠️ ERROR DE ENLACE";
-            }
+            } catch(e) { console.log("Reconectando..."); }
         }
-
-        // Actualización constante
-        setInterval(updateDashboard, 800);
-        updateDashboard();
-    </script>
-</body>
-</html>
+        setInterval(updateDashboar
