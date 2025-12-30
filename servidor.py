@@ -31,10 +31,13 @@ async def recibir_resultado(res: Resultado):
     memoria["historial"].append(valor)
     if len(memoria["historial"]) > 50: memoria["historial"].pop(0)
 
-    hist = memoria["historial"]
-    if len(hist) < 5: 
-        memoria["sugerencia"] = "⏳ RECOLECTANDO"
-        return {"status": "ok"}
+    # --- ESTA LÍNEA ES LA QUE MOSTRARÁ EL NÚMERO EN EL LOG ---
+    print(f"🎯 DATO ACTUALIZADO EN EL CEREBRO: {valor}x")
+    
+    # ... resto de tu lógica de predicción ...
+    # (Asegúrate de que la lógica de score y targets esté debajo)
+    
+    return {"status": "ok"}
 
     # --- MOTOR ESTADÍSTICO ---
     recientes = hist[-10:]
@@ -88,3 +91,4 @@ async def recibir_resultado(res: Resultado):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
