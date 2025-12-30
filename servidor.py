@@ -21,13 +21,13 @@ memoria = {
     "historial_visual": []
 }
 
-# --- MOTOR DE GRAFOS V33 ---
-# Categoría 0: < 1.50 (Pérdida para tu objetivo)
-# Categoría 1: >= 1.50 (Éxito para tu objetivo)
-def categorizar_estricto(v):
-    return "EXITO" if v >= 1.50 else "FALLO"
-
+# Grafo centrado en el objetivo 1.50x
 grafo = collections.defaultdict(lambda: collections.Counter())
+
+def categorizar_pro(v):
+    if v < 1.20: return "PELIGRO_TOTAL"
+    if v < 1.50: return "ZONA_PERDIDA"
+    return "EXITO_150"
 
 @app.get("/data")
 async def get_data():
@@ -38,71 +38,80 @@ async def recibir_resultado(res: Resultado):
     valor = res.valor
     memoria["ultimo_valor"] = valor
     memoria["historial_visual"].insert(0, valor)
-    if len(memoria["historial_visual"]) > 200: memoria["historial_visual"].pop()
+    if len(memoria["historial_visual"]) > 100: memoria["historial_visual"].pop()
 
     hist = memoria["historial_visual"]
-    if len(hist) < 20:
-        memoria["sugerencia"] = f"📊 RECOLECTANDO ({len(hist)}/20)"
+    if len(hist) < 15:
+        memoria["sugerencia"] = f"📊 ANALIZANDO ({len(hist)}/15)"
         return {"status": "ok"}
 
-    # 1. ACTUALIZAR MAPA DE GRAFOS
+    # --- 1. FILTRO ANTI-VACÍO (ELIMINA FALSOS POSITIVOS) ---
+    # Si hubo dos crashes extremos (<1.20) muy recientes, bloqueamos todo.
+    extremos_recientes = len([v for v in hist[:3] if v < 1.20])
+    
+    # --- 2. MOTOR DE GRAFOS ---
     for i in range(len(hist) - 4):
-        # Nodo: Secuencia de 3 resultados previos
-        nodo = tuple(categorizar_estricto(x) for x in hist[i+1:i+4])
-        resultado = categorizar_estricto(hist[i])
+        nodo = tuple(categorizar_pro(x) for x in hist[i+1:i+4])
+        resultado = categorizar_pro(hist[i])
         grafo[nodo][resultado] += 1
 
-    # 2. CONSULTAR ESTADO ACTUAL
-    situacion_actual = tuple(categorizar_estricto(x) for x in hist[:3])
+    situacion_actual = tuple(categorizar_pro(x) for x in hist[:3])
     posibilidades = grafo[situacion_actual]
     total_muestras = sum(posibilidades.values())
     
-    # Probabilidad real de superar 1.50x basada en el historial
-    prob_exito = (posibilidades["EXITO"] / total_muestras * 100) if total_muestras > 0 else 0
+    # Probabilidad real de éxito para el objetivo 1.50x
+    prob_exito = (posibilidades["EXITO_150"] / total_muestras * 100) if total_muestras > 0 else 0
 
-    # 3. FILTRO DE VOLATILIDAD (FILTRO DE SEGURIDAD)
-    # Si los últimos 10 juegos tienen un promedio muy bajo, el mercado está en "Recaudación"
-    media_reciente = statistics.mean(hist[:10])
+    # --- 3. ANÁLISIS DE TENDENCIA (SALUD DEL MERCADO) ---
+    media_corta = statistics.mean(hist[:5])
     
-    # 4. CALCULO DE RADAR ROSA (Basado en déficit)
-    distancia_rosa = 0
-    for v in hist:
-        if v >= 10.0: break
-        distancia_rosa += 1
-    prob_rosa = min(99, (distancia_rosa * 1.5) + (20 if media_reciente < 2.0 else 0))
-    memoria["radar_rosa"] = f"{round(prob_rosa)}%"
+    # --- 4. CÁLCULO DE TARGETS (MÍNIMO 1.50x) ---
+    mediana = statistics.median(hist[:20])
+    val_s_raw = round(max(1.50, mediana * 0.88), 2)
+    val_e_raw = round(max(val_s_raw * 1.8, mediana * 1.6), 2)
 
-    # --- LÓGICA DE SEÑAL DE ALTA ASERTIVIDAD ---
-    # Solo damos señal si la confianza del GRAFO es > 75% Y la media reciente no es crítica
-    if prob_exito >= 78 and media_reciente > 1.30:
-        # Calculamos el Retiro Seguro (Mínimo 1.50x)
-        mediana = statistics.median(hist[:20])
-        val_s = round(max(1.50, mediana * 0.85), 2)
-        val_e = round(max(val_s * 2.1, mediana * 1.8), 2)
-
-        memoria["sugerencia"] = "🔥 ENTRADA FUERTE"
-        memoria["confianza"] = f"{round(prob_exito)}%"
-        memoria["tp_s"] = f"{val_s}x"
-        memoria["tp_e"] = f"{val_e}x"
-        memoria["fase"] = "🚀 NODO DE ÉXITO"
+    # --- 5. LÓGICA DE DECISIÓN TITANIUM ---
+    # CONDICIÓN PARA ENTRADA FUERTE:
+    # - Probabilidad de éxito > 80%
+    # - NO estar en zona de vacío (extremos_recientes < 2)
+    # - La media corta no debe ser un desastre (>1.30)
     
-    # Si hay tendencia pero no llega al 78% de seguridad
-    elif prob_exito >= 50:
-        memoria["sugerencia"] = "⏳ ESPERANDO CONFIRMACIÓN"
-        memoria["confianza"] = f"{round(prob_exito)}%"
+    if extremos_recientes >= 2:
+        memoria["sugerencia"] = "🛑 NO ENTRAR (SUCCIÓN)"
+        memoria["confianza"] = "1%"
         memoria["tp_s"] = "--"
+        memoria["tp_e"] = "--"
+        memoria["fase"] = "⚠️ RECAUDACIÓN CRÍTICA"
+        
+    elif prob_exito >= 80 and media_corta > 1.35:
+        memoria["sugerencia"] = "🚀 ENTRADA FUERTE"
+        memoria["confianza"] = f"{round(prob_exito)}%"
+        memoria["tp_s"] = f"{val_s_raw}x"
+        memoria["tp_e"] = f"{val_e_raw}x"
+        memoria["fase"] = "🔥 ALTA PROBABILIDAD"
+        
+    elif prob_exito >= 55:
+        memoria["sugerencia"] = "⚠️ POSIBLE SEÑAL"
+        memoria["confianza"] = f"{round(prob_exito)}%"
+        memoria["tp_s"] = "1.50x" # Forzamos tu mínimo
         memoria["tp_e"] = "--"
         memoria["fase"] = "⚖️ TRANSICIÓN"
-    
+        
     else:
-        # BLOQUEO DE SEGURIDAD
-        memoria["sugerencia"] = "🛑 NO ENTRAR"
+        memoria["sugerencia"] = "⏳ ESPERANDO PATRÓN"
         memoria["confianza"] = f"{round(prob_exito)}%"
         memoria["tp_s"] = "--"
         memoria["tp_e"] = "--"
-        memoria["fase"] = "⚠️ RECAUDACIÓN"
+        memoria["fase"] = "📊 RECAUDACIÓN"
 
-    print(f"[{valor}x] Prob 1.50x: {prob_exito:.1f}% | Fase: {memoria['fase']}")
+    # Radar Rosa Dinámico
+    rondas_sin_rosa = 0
+    for v in hist:
+        if v >= 10.0: break
+        rondas_sin_rosa += 1
+    memoria["radar_rosa"] = f"{min(99, rondas_sin_rosa * 2)}%"
+
+    print(f"[{valor}x] Prob 1.50: {prob_exito:.1f}% | Extremos: {extremos_recientes}")
     return {"status": "ok"}
 
 if __name__ == "__main__":
