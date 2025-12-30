@@ -2,9 +2,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import statistics
-import csv
-import os
-from datetime import datetime
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -12,13 +9,12 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 class Resultado(BaseModel):
     valor: float
 
-# Estructura Maestra - Nombres sincronizados con el HTML
 memoria = {
     "ultimo_valor": 0.0,
     "sugerencia": "⏳ ANALIZANDO",
     "confianza": "0%",
     "radar_rosa": "BAJO",
-    "fase": "ESTABLE",
+    "fase": "ESTABILIZANDO",
     "tp_s": "--",
     "tp_e": "--",
     "historial_visual": []
@@ -32,74 +28,68 @@ async def get_data():
 async def recibir_resultado(res: Resultado):
     valor = res.valor
     memoria["ultimo_valor"] = valor
-    
-    # Actualizar historial
     memoria["historial_visual"].insert(0, valor)
-    if len(memoria["historial_visual"]) > 100: memoria["historial_visual"].pop()
-    
-    # Guardar en CSV para memoria a largo plazo
-    with open('base_datos_v29.csv', mode='a', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow([datetime.now().strftime("%H:%M:%S"), valor])
+    if len(memoria["historial_visual"]) > 50: memoria["historial_visual"].pop()
 
     hist = [v for v in memoria["historial_visual"] if v > 0]
     if len(hist) < 10:
-        memoria["sugerencia"] = f"⏳ CARGANDO ({len(hist)}/10)"
+        memoria["sugerencia"] = "⏳ RECOLECTANDO DATOS"
         return {"status": "ok"}
 
-    # --- MOTOR DE INTELIGENCIA AVANZADA ---
+    # --- MOTOR DE SEGURIDAD "BLACK ARMOR" ---
     
-    # 1. Medición de Riesgo (Volatilidad)
-    volatilidad = statistics.stdev(hist[:10])
-    mediana = statistics.median(hist[:20])
-    
-    # 2. Análisis de "Déficit" (Presión de Pago)
-    recientes = hist[:6]
-    azules = len([v for v in recientes if v < 2.0])
-    
-    # 3. SCORE DE CONFIANZA (Efecto Resorte + Momentum)
-    score = (azules * 15) 
-    if valor < 1.15: score += 40 # Bono por crash bajo
-    if any(v > 10.0 for v in hist[:5]): score -= 30 # Penalizar tras un Rosa reciente
+    # 1. Detectar "Zona de Vacío" (Crashes inmediatos)
+    # Si los últimos 2 fueron < 1.20, NO ENTRAR bajo ninguna circunstancia.
+    if hist[0] < 1.20 and hist[1] < 1.20:
+        memoria["sugerencia"] = "🛑 ZONA DE RIESGO"
+        memoria["fase"] = "⚠️ RECAUDACIÓN"
+        memoria["confianza"] = "5%"
+        memoria["tp_s"] = "--"
+        memoria["tp_e"] = "--"
+        return {"status": "ok"}
 
-    # 4. CÁLCULO DE TARGETS DINÁMICOS (BUFFER DE SEGURIDAD)
-    # Si la volatilidad es alta, bajamos el target para no fallar
-    buffer = 0.95 if volatilidad < 2.0 else 0.88
+    # 2. Análisis de Mediana y Volatilidad
+    mediana_reciente = statistics.median(hist[:15])
     
-    # Scalping: Punto de retorno del 90% de probabilidad
-    val_s = round(max(1.25, (mediana * 0.82) * buffer), 2)
-    # Explosivo: Punto de retorno del 60% de probabilidad
-    val_e = round(max(val_s * 1.5, (mediana * 1.4) * buffer), 2)
-
-    # --- DETERMINACIÓN DE FASES ---
-    score_final = min(max(score, 5), 99)
-    memoria["confianza"] = f"{score_final}%"
+    # 3. Cálculo de Score (Probabilidad de rebote)
+    azules = len([v for v in hist[:6] if v < 2.0])
+    score = (azules * 20)
     
-    # Radar Rosa
-    rondas_sin_rosa = 0
-    for v in hist:
-        if v < 10.0: rondas_sin_rosa += 1
-        else: break
-    memoria["radar_rosa"] = "ALTO 🔥" if rondas_sin_rosa > 30 else "BAJO ❄️"
+    # Bono por "Déficit de Pago"
+    if mediana_reciente < 1.60: score += 30 # El casino está debiendo verdes
 
-    # Sugerencia Final
-    if score_final >= 75:
+    # --- CÁLCULO DE TARGETS EXTREMADAMENTE ASERTIVOS ---
+    # Para que el 1.50x sea "seguro", la mediana debe estar sana (>1.80)
+    if mediana_reciente > 1.80:
+        val_s = 1.50 # Tu objetivo solicitado
+    else:
+        val_s = round(mediana_reciente * 0.85, 2)
+        val_s = max(1.25, val_s) # Mínimo absoluto de seguridad
+
+    # Ganancia Alta (Ahora más conservadora para no fallar)
+    val_e = round(val_s * 1.6, 2)
+
+    # --- DETERMINACIÓN DE SALIDA ---
+    confianza_num = min(score, 99)
+    memoria["confianza"] = f"{confianza_num}%"
+
+    # Solo activamos señales si la confianza es muy alta
+    if confianza_num >= 80:
         memoria["sugerencia"] = "🔥 ENTRADA FUERTE"
-        memoria["fase"] = "🚀 RECUPERACIÓN"
+        memoria["fase"] = "🚀 COMPENSACIÓN"
         memoria["tp_s"] = f"{val_s}x"
         memoria["tp_e"] = f"{val_e}x"
-    elif score_final >= 45:
+    elif confianza_num >= 50:
         memoria["sugerencia"] = "⚠️ POSIBLE SEÑAL"
         memoria["fase"] = "⚖️ ESTABLE"
         memoria["tp_s"] = f"{val_s}x"
         memoria["tp_e"] = "--"
     else:
-        memoria["sugerencia"] = "⏳ BUSCANDO PATRÓN"
-        memoria["fase"] = "📊 RECAUDACIÓN"
+        memoria["sugerencia"] = "⏳ ESPERANDO PATRÓN"
+        memoria["fase"] = "📊 ANALIZANDO"
         memoria["tp_s"] = "--"
         memoria["tp_e"] = "--"
 
-    print(f"[{valor}x] Score: {score_final}% | Sugerencia: {memoria['sugerencia']}")
     return {"status": "ok"}
 
 if __name__ == "__main__":
