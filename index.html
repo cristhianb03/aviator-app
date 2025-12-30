@@ -72,28 +72,38 @@
         </button>
     </div>
 
-    <script>
-        // TU URL DE NGROK
-        const API = "https://cordlike-dylan-unstrenuously.ngrok-free.dev/data";
+<script>
+        // URL EXACTA DE TU IMAGEN
+        const API_URL = "https://cordlike-dylan-unstrenuously.ngrok-free.dev/data";
 
-        async function update() {
+        async function updateDashboard() {
             try {
-                const r = await fetch(API, { headers: { "ngrok-skip-browser-warning": "69420" } });
-                const d = await r.json();
+                const response = await fetch(API_URL, {
+                    headers: {
+                        "ngrok-skip-browser-warning": "69420"
+                    }
+                });
+                
+                if (!response.ok) throw new Error('Servidor Offline');
+                
+                const d = await response.json();
 
-                // LÓGICA ANTI-UNDEFINED: Si no existe, mostrar guion
+                // MAPEO EXACTO DE LOS DATOS DE TU IMAGEN
                 document.getElementById('val').innerText = (d.ultimo_valor || "0") + 'x';
-                document.getElementById('sug').innerText = d.sugerencia || "---";
+                document.getElementById('sug').innerText = d.sugerencia || "ANALIZANDO";
                 document.getElementById('prob').innerText = d.confianza || "0%";
-                document.getElementById('fase').innerText = d.fase || "---";
-                document.getElementById('radar').innerText = d.radar_rosa || "---";
+                document.getElementById('fase').innerText = d.fase || "SINC";
+                document.getElementById('radar').innerText = d.radar_rosa || "BAJO";
                 document.getElementById('tp_s').innerText = d.tp_s || "--";
                 document.getElementById('tp_e').innerText = d.tp_e || "--";
 
-                // Historial Burbujas
+                // LED de conexión
+                document.getElementById('led').className = "w-2 h-2 bg-green-500 rounded-full animate-pulse";
+
+                // Historial de Burbujas
                 const hCont = document.getElementById('hist');
-                hCont.innerHTML = "";
-                if(d.historial_visual) {
+                if (hCont && d.historial_visual) {
+                    hCont.innerHTML = "";
                     d.historial_visual.forEach(v => {
                         const s = document.createElement('span');
                         let c = "b-blue";
@@ -104,12 +114,14 @@
                     });
                 }
 
-                // Colores Dinámicos
-                const box = document.getElementById('box');
-                const led = document.getElementById('led');
-                led.className = "w-2 h-2 bg-green-500 rounded-full animate-pulse";
+            } catch (error) {
+                console.error("Error:", error);
+                document.getElementById('led').className = "w-2 h-2 bg-red-600 rounded-full";
+            }
+        }
 
-                if(d.sugerencia.includes("ENTRADA")) {
-                    box.className = "bg-green-600 rounded-3xl p-6 border border-green-400 signal-glow transition-all";
-                } else if(d.sugerencia.includ
+        setInterval(updateDashboard, 1000);
+        updateDashboard();
+    </script>
+
 
