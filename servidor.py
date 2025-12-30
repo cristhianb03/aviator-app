@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import statistics
+import math
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -9,16 +10,63 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 class Resultado(BaseModel):
     valor: float
 
+# Memoria de la IA
 memoria = {
     "ultimo_valor": 0.0,
-    "sugerencia": "⏳ ANALIZANDO",
+    "sugerencia": "⏳ CALIBRANDO",
     "confianza": "0%",
-    "radar_rosa": "BAJO",
-    "fase": "ESTABILIZANDO",
+    "fase": "APRENDIENDO",
     "tp_s": "--",
     "tp_e": "--",
     "historial_visual": []
 }
+
+def calcular_probabilidad_ia(hist):
+    if len(hist) < 10: return 0, 1.30, 2.00
+    
+    # 1. ANALIZADOR DE PATRONES (PATTERN MATCHING)
+    # Comparamos la secuencia actual de 3 con el historial de 100
+    secuencia_actual = [1 if x >= 2.0 else 0 for x in hist[:3]] # 1=verde, 0=azul
+    coincidencias = 0
+    exitos_verde = 0
+    
+    for i in range(1, len(hist) - 3):
+        ventana = [1 if x >= 2.0 else 0 for x in hist[i:i+3]]
+        if ventana == secuencia_actual:
+            coincidencias += 1
+            if hist[i-1] >= 2.0: exitos_verde += 1
+            
+    # Probabilidad basada en patrones pasados
+    prob_patron = (exitos_verde / coincidencias) if coincidencias > 0 else 0.5
+
+    # 2. MÉTRICA DE VOLATILIDAD (RIESGO)
+    desviacion = statistics.stdev(hist[:15]) if len(hist) >= 15 else 1.0
+    mediana = statistics.median(hist[:30])
+
+    # 3. SCORE FINAL (Fusión de racha + patrones + volatilidad)
+    azules = 0
+    for v in hist:
+        if v < 2.0: azules += 1
+        else: break
+        
+    score = (prob_patron * 50) + (azules * 15)
+    if hist[0] < 1.10: score += 30 # Efecto Resorte
+    
+    # Penalización por seguridad (ZONA DE VACÍO)
+    if all(v < 1.25 for v in hist[:2]): score = score * 0.5 
+
+    # 4. CÁLCULO DE TARGETS INTELIGENTES
+    # El retiro seguro ya no es fijo. Se ajusta a la mediana y a la confianza.
+    buffer_seguridad = 0.92 if desviacion > 2.0 else 0.96
+    
+    # Si la IA tiene mucha confianza, sube el target
+    t_seguro = round(mediana * 0.85 * buffer_seguridad * (1.1 if score > 80 else 1.0), 2)
+    t_explosivo = round(mediana * 1.5 * buffer_seguridad * (1.2 if score > 80 else 1.0), 2)
+
+    # Forzar el 1.50x que pediste si las condiciones son óptimas
+    if score > 85 and mediana > 1.8: t_seguro = 1.50
+
+    return min(score, 99), t_seguro, t_explosivo
 
 @app.get("/data")
 async def get_data():
@@ -29,64 +77,32 @@ async def recibir_resultado(res: Resultado):
     valor = res.valor
     memoria["ultimo_valor"] = valor
     memoria["historial_visual"].insert(0, valor)
-    if len(memoria["historial_visual"]) > 50: memoria["historial_visual"].pop()
+    if len(memoria["historial_visual"]) > 100: memoria["historial_visual"].pop()
 
-    hist = [v for v in memoria["historial_visual"] if v > 0]
+    hist = memoria["historial_visual"]
     if len(hist) < 10:
-        memoria["sugerencia"] = "⏳ RECOLECTANDO DATOS"
+        memoria["sugerencia"] = f"⏳ IA RECOLECTANDO ({len(hist)}/10)"
         return {"status": "ok"}
 
-    # --- MOTOR DE SEGURIDAD "BLACK ARMOR" ---
+    # EJECUTAR MOTOR DE IA
+    score, ts, te = calcular_probabilidad_ia(hist)
     
-    # 1. Detectar "Zona de Vacío" (Crashes inmediatos)
-    # Si los últimos 2 fueron < 1.20, NO ENTRAR bajo ninguna circunstancia.
-    if hist[0] < 1.20 and hist[1] < 1.20:
-        memoria["sugerencia"] = "🛑 ZONA DE RIESGO"
-        memoria["fase"] = "⚠️ RECAUDACIÓN"
-        memoria["confianza"] = "5%"
-        memoria["tp_s"] = "--"
-        memoria["tp_e"] = "--"
-        return {"status": "ok"}
-
-    # 2. Análisis de Mediana y Volatilidad
-    mediana_reciente = statistics.median(hist[:15])
+    memoria["confianza"] = f"{round(score)}%"
     
-    # 3. Cálculo de Score (Probabilidad de rebote)
-    azules = len([v for v in hist[:6] if v < 2.0])
-    score = (azules * 20)
-    
-    # Bono por "Déficit de Pago"
-    if mediana_reciente < 1.60: score += 30 # El casino está debiendo verdes
-
-    # --- CÁLCULO DE TARGETS EXTREMADAMENTE ASERTIVOS ---
-    # Para que el 1.50x sea "seguro", la mediana debe estar sana (>1.80)
-    if mediana_reciente > 1.80:
-        val_s = 1.50 # Tu objetivo solicitado
-    else:
-        val_s = round(mediana_reciente * 0.85, 2)
-        val_s = max(1.25, val_s) # Mínimo absoluto de seguridad
-
-    # Ganancia Alta (Ahora más conservadora para no fallar)
-    val_e = round(val_s * 1.6, 2)
-
-    # --- DETERMINACIÓN DE SALIDA ---
-    confianza_num = min(score, 99)
-    memoria["confianza"] = f"{confianza_num}%"
-
-    # Solo activamos señales si la confianza es muy alta
-    if confianza_num >= 80:
-        memoria["sugerencia"] = "🔥 ENTRADA FUERTE"
-        memoria["fase"] = "🚀 COMPENSACIÓN"
-        memoria["tp_s"] = f"{val_s}x"
-        memoria["tp_e"] = f"{val_e}x"
-    elif confianza_num >= 50:
-        memoria["sugerencia"] = "⚠️ POSIBLE SEÑAL"
+    # Determinar Sugerencia
+    if score >= 80:
+        memoria["sugerencia"] = "🚀 ENTRADA IA CONFIRMADA"
+        memoria["fase"] = "🔥 ALTA PROBABILIDAD"
+        memoria["tp_s"] = f"{ts}x"
+        memoria["tp_e"] = f"{te}x"
+    elif score >= 50:
+        memoria["sugerencia"] = "⚠️ SEÑAL MODERADA"
         memoria["fase"] = "⚖️ ESTABLE"
-        memoria["tp_s"] = f"{val_s}x"
+        memoria["tp_s"] = f"{ts}x"
         memoria["tp_e"] = "--"
     else:
-        memoria["sugerencia"] = "⏳ ESPERANDO PATRÓN"
-        memoria["fase"] = "📊 ANALIZANDO"
+        memoria["sugerencia"] = "⏳ BUSCANDO PATRÓN"
+        memoria["fase"] = "📊 RECAUDACIÓN"
         memoria["tp_s"] = "--"
         memoria["tp_e"] = "--"
 
