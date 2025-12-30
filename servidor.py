@@ -9,11 +9,14 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 class Resultado(BaseModel):
     valor: float
 
+# MEMORIA MAESTRA UNIFICADA
 memoria = {
     "ultimo_valor": 0.0,
-    "sugerencia": "⏳ ESCANEANDO",
+    "sugerencia": "⏳ ANALIZANDO",
     "confianza": "0%",
-    "tp_s": "--", "tp_b": "--", "tp_g": "--", "tp_n": "--",
+    "fase": "ESCANEO",
+    "tp_seguro": "--",
+    "tp_explosivo": "--",
     "historial": []
 }
 
@@ -26,14 +29,60 @@ async def recibir_resultado(res: Resultado):
     valor = res.valor
     memoria["ultimo_valor"] = valor
     memoria["historial"].append(valor)
-    if len(memoria["historial"]) > 30: memoria["historial"].pop(0)
+    if len(memoria["historial"]) > 50: memoria["historial"].pop(0)
+
+    hist = memoria["historial"]
+    if len(hist) < 5: 
+        memoria["sugerencia"] = "⏳ RECOLECTANDO"
+        return {"status": "ok"}
+
+    # --- MOTOR ESTADÍSTICO ---
+    recientes = hist[-10:]
+    mediana = statistics.median(hist)
+    verdes_ratio = len([v for v in recientes if v >= 2.0]) / 10
     
-    # ... (Aquí va tu lógica de cálculo que ya teníamos) ...
-    # Por ahora, una lógica simple para que veas datos:
-    memoria["sugerencia"] = "✅ DATOS RECIBIDOS"
-    memoria["tp_s"] = "1.30x"
+    azules_seguidos = 0
+    for v in reversed(hist):
+        if v < 2.0: azules_seguidos += 1
+        else: break
+
+    # --- DETERMINACIÓN DE FASE Y SCORE ---
+    score = 0
+    if verdes_ratio >= 0.6:
+        memoria["fase"] = "🚀 EXPANSIÓN"
+        score = 85 + (verdes_ratio * 10)
+        agresividad = 1.2
+    elif azules_seguidos >= 2:
+        memoria["fase"] = "🔄 REBOTE"
+        score = (azules_seguidos * 25) + (30 if valor < 1.15 else 0)
+        agresividad = 0.95
+    else:
+        memoria["fase"] = "⚖️ ESTABLE"
+        score = 40 + (verdes_ratio * 30)
+        agresividad = 0.9
+
+    # --- CÁLCULO DE TARGETS (SOLO DOS) ---
+    buffer = 0.94 # Seguridad del 6%
+    t_seguro = round(max(1.25, (mediana * 0.85) * agresividad * buffer), 2)
+    t_explosivo = round(max(t_seguro * 1.5, (mediana * 1.5) * agresividad * buffer), 2)
+
+    # --- ACTUALIZACIÓN DE MEMORIA ---
+    score_final = min(round(score), 99)
+    memoria["confianza"] = f"{score_final}%"
     
-    print(f"🎯 Recibido desde el Scraper: {valor}x")
+    if score_final >= 75:
+        memoria["sugerencia"] = "🔥 ENTRADA CONFIRMADA"
+        memoria["tp_seguro"] = f"{t_seguro}x"
+        memoria["tp_explosivo"] = f"{t_explosivo}x"
+    elif score_final >= 40:
+        memoria["sugerencia"] = "⚠️ POSIBLE SEÑAL"
+        memoria["tp_seguro"] = f"{t_seguro}x"
+        memoria["tp_explosivo"] = "--"
+    else:
+        memoria["sugerencia"] = "⏳ BUSCANDO PATRÓN"
+        memoria["tp_seguro"] = "--"
+        memoria["tp_explosivo"] = "--"
+
     return {"status": "ok"}
 
 if __name__ == "__main__":
