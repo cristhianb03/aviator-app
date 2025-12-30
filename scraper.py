@@ -42,27 +42,31 @@ def run():
 
         while True:
             try:
-                # Escaneo de frames (importante en Edge para 1Win)
                 for f in page.frames:
-                    try:
-                        el = f.locator(sel).first
-                        if el and el.is_visible():
-                            t = el.inner_text().lower().replace('x','').replace(',','.').strip()
-                            v = float(t)
-                            
-                            if v != u:
-                                # Enviar al Servidor local de Google Cloud
-                                res = requests.post(URL_SERVIDOR, json={"valor": v}, timeout=1)
-                                if res.status_code == 200:
-                                    print(f"🎯 DATO CAPTURADO EN EDGE: {v}x")
-                                u = v
-                            break # Dato encontrado, salir de los frames
-                    except:
-                        continue
-            except:
-                pass
-            
-            time.sleep(0.4) # Revisa 2.5 veces por segundo
+                    # Buscamos de forma más agresiva en el historial superior
+                    # Agregamos .payouts-block y elementos de burbuja genéricos
+                    elementos = f.locator(".bubble-multiplier, .payout, .app-stats-item, [class*='multiplier']").all()
+                    
+                    if len(elementos) > 0:
+                        # Probamos con el primer elemento encontrado
+                        el = elementos[0]
+                        t = el.inner_text().lower().replace('x','').replace(',','.').strip()
+                        
+                        # DEBUG: Si quieres ver si encuentra algo aunque no sea el número exacto
+                        # print(f"DEBUG: Encontrado texto: {t}") 
 
+                        try:
+                            v = float(t)
+                            if v != u:
+                                requests.post(URL_SERVIDOR, json={"valor": v}, timeout=1)
+                                u = v
+                                print(f"🎯 DATO CAPTURADO: {v}x")
+                            break 
+                        except ValueError:
+                            continue # Si no es un número, sigue buscando
+            except Exception as e:
+                pass
+            time.sleep(0.3)
 if __name__ == "__main__":
     run()
+
