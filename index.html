@@ -3,100 +3,128 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aviator Master Unified</title>
+    <title>Aviator Master Unified - V16</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;900&display=swap');
-        body { font-family: 'Inter', sans-serif; background: #050608; color: white; }
-        .bg-gradient { background: radial-gradient(circle at 50% 0%, #1e293b, #050608); }
-        .glow-signal { animation: glow 2s infinite; }
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;900&display=swap');
+        body { font-family: 'Outfit', sans-serif; background: #05070a; color: white; }
+        .bg-pro { background: radial-gradient(circle at 50% 0%, #1e293b, #05070a); }
+        .signal-glow { animation: glow 2s infinite; }
         @keyframes glow { 0%, 100% { box-shadow: 0 0 20px rgba(34, 197, 94, 0.1); } 50% { box-shadow: 0 0 40px rgba(34, 197, 94, 0.4); } }
+        .transition-all { transition: all 0.5s ease; }
     </style>
 </head>
-<body class="bg-gradient min-h-screen flex flex-col items-center p-6">
+<body class="bg-pro min-h-screen flex flex-col items-center p-4">
 
     <div class="w-full max-w-md">
-        <!-- Header -->
+        <!-- Header con Estado del Servidor -->
         <header class="flex justify-between items-center py-6 mb-2">
             <div>
-                <h1 class="text-xl font-black italic tracking-tighter">MASTER<span class="text-red-600">UNIFIED</span></h1>
-                <p id="fase" class="text-[9px] font-bold text-blue-400 uppercase tracking-widest">Calculando...</p>
+                <h1 class="text-2xl font-black tracking-tighter italic">MASTER<span class="text-red-600">UNIFIED</span></h1>
+                <p id="fase" class="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Sincronizando...</p>
             </div>
             <div class="bg-zinc-900 border border-white/5 px-3 py-1 rounded-full flex items-center gap-2">
-                <div id="led" class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                <span class="text-[9px] font-black text-gray-500 uppercase">SYNC OK</span>
+                <div id="led" class="w-2 h-2 bg-red-500 rounded-full"></div>
+                <span class="text-[9px] font-black text-gray-400 uppercase">GCP LIVE</span>
             </div>
         </header>
 
-        <!-- Monitor -->
-        <div class="bg-zinc-900/80 rounded-[3rem] p-10 border border-white/5 shadow-2xl text-center mb-8">
-            <p class="text-gray-600 text-[10px] font-bold uppercase tracking-[0.4em] mb-4">Telemetría Live</p>
-            <div id="val" class="text-8xl font-black mb-8 tracking-tighter">--</div>
+        <!-- Monitor Principal de Resultados -->
+        <div class="bg-zinc-900/90 rounded-[2.5rem] p-10 border border-white/5 shadow-2xl text-center mb-6 backdrop-blur-xl relative overflow-hidden">
+            <p class="text-gray-600 text-[10px] font-bold uppercase tracking-[0.4em] mb-4">Telemetría en Vivo</p>
+            <div id="val" class="text-8xl font-black mb-8 tracking-tighter text-white">--</div>
 
-            <div class="mb-8">
-                <div class="flex justify-between text-[10px] font-bold uppercase mb-2">
+            <!-- Barra de Confianza Algorítmica -->
+            <div class="mb-8 px-4">
+                <div class="flex justify-between text-[10px] font-black uppercase mb-2">
                     <span class="text-gray-500">Confianza</span>
                     <span id="prob" class="text-blue-500">0%</span>
                 </div>
-                <div class="w-full bg-white/5 h-1 rounded-full overflow-hidden">
+                <div class="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
                     <div id="bar" class="bg-blue-600 h-full transition-all duration-1000" style="width: 0%"></div>
                 </div>
             </div>
 
+            <!-- Caja de Recomendación -->
             <div id="box" class="bg-white/5 rounded-3xl p-6 border border-white/5 transition-all">
-                <p id="sug" class="text-xl font-black italic uppercase tracking-wider">Esperando Patrón</p>
+                <p id="sug" class="text-xl font-black italic uppercase tracking-wider text-white">Esperando Datos</p>
             </div>
         </div>
 
-        <!-- Dos Recomendaciones Únicas -->
-        <div class="grid grid-cols-2 gap-4">
+        <!-- Panel de Retiro (Objetivos) -->
+        <div class="grid grid-cols-2 gap-4 mb-8">
             <div class="bg-zinc-900/50 p-6 rounded-[2.5rem] border border-white/5 text-center">
-                <p class="text-[10px] text-green-500 font-bold uppercase mb-2">RETIRO SEGURO</p>
+                <p class="text-[10px] text-green-500 font-bold uppercase mb-2">Retiro Seguro</p>
                 <p id="tp_s" class="text-4xl font-black text-white">--</p>
-                <p class="text-[9px] text-gray-600 mt-2 font-bold uppercase">Meta 90%</p>
+                <p class="text-[9px] text-gray-600 mt-2 font-bold uppercase">Asertividad 93%</p>
             </div>
             <div class="bg-zinc-900/50 p-6 rounded-[2.5rem] border border-white/5 text-center">
-                <p class="text-[10px] text-red-500 font-bold uppercase mb-2">GANANCIA ALTA</p>
+                <p class="text-[10px] text-red-500 font-bold uppercase mb-2">Ganancia Alta</p>
                 <p id="tp_e" class="text-4xl font-black text-white">--</p>
                 <p class="text-[9px] text-gray-600 mt-2 font-bold uppercase">Momentum</p>
             </div>
         </div>
 
-        <button onclick="location.reload()" class="w-full mt-10 py-5 bg-white text-black font-black text-xs uppercase tracking-widest rounded-3xl active:scale-95 transition-all">
-            Actualizar Sistema
+        <!-- Botón de Actualización Manual -->
+        <button onclick="location.reload()" class="w-full py-5 bg-white text-black font-black text-xs uppercase tracking-widest rounded-[2rem] active:scale-95 transition-all shadow-xl">
+            Reiniciar Conexión
         </button>
+        
+        <p class="text-[9px] text-gray-600 text-center mt-6 uppercase tracking-widest">
+            Servidor: 35.237.64.255 | Latencia: <span id="ping">--</span>ms
+        </p>
     </div>
 
     <script>
-        const API = "http://35.237.64.255:8000/data";
-        async function update() {
-            try {
-                const r = await fetch(API);
-                const d = await r.json();
-                document.getElementById('val').innerText = d.ultimo_valor + 'x';
-                document.getElementById('sug').innerText = d.sugerencia;
-                document.getElementById('prob').innerText = d.confianza;
-                document.getElementById('bar').style.width = d.confianza;
-                document.getElementById('fase').innerText = d.fase;
-                document.getElementById('tp_s').innerText = d.tp_seguro;
-                document.getElementById('tp_e').innerText = d.tp_explosivo;
+        // DIRECCIÓN DE TU SERVIDOR EN GOOGLE CLOUD
+        const API_URL = "http://35.237.64.255:8000/data";
 
+        async function updateDashboard() {
+            const startTime = Date.now();
+            try {
+                const response = await fetch(API_URL);
+                if (!response.ok) throw new Error('Offline');
+                
+                const data = await response.json();
+                const latency = Date.now() - startTime;
+
+                // Actualizar Textos
+                document.getElementById('val').innerText = data.ultimo_valor + 'x';
+                document.getElementById('sug').innerText = data.sugerencia;
+                document.getElementById('prob').innerText = data.confianza;
+                document.getElementById('bar').style.width = data.confianza;
+                document.getElementById('fase').innerText = data.fase;
+                document.getElementById('tp_s').innerText = data.tp_seguro;
+                document.getElementById('tp_e').innerText = data.tp_explosivo;
+                document.getElementById('ping').innerText = latency;
+
+                // Estilos Dinámicos
                 const box = document.getElementById('box');
                 const bar = document.getElementById('bar');
-                if(d.sugerencia.includes("FUERTE")) {
+                const led = document.getElementById('led');
+
+                led.className = "w-2 h-2 bg-green-500 rounded-full animate-pulse";
+
+                if(data.sugerencia.includes("CONFIRMADA")) {
                     box.className = "bg-green-600 rounded-3xl p-6 border border-green-400 glow-signal";
                     bar.className = "bg-green-500 h-full transition-all";
-                } else if(d.sugerencia.includes("POSIBLE")) {
+                } else if(data.sugerencia.includes("POSIBLE")) {
                     box.className = "bg-yellow-600/30 rounded-3xl p-6 border border-yellow-500";
                     bar.className = "bg-yellow-500 h-full transition-all";
                 } else {
                     box.className = "bg-white/5 rounded-3xl p-6 border border-white/5";
                     bar.className = "bg-blue-600 h-full transition-all";
                 }
-            } catch(e) {}
+
+            } catch (error) {
+                console.error("Error de conexión:", error);
+                document.getElementById('led').className = "w-2 h-2 bg-red-600 rounded-full";
+                document.getElementById('fase').innerText = "⚠️ ERROR DE CONEXIÓN";
+            }
         }
-        setInterval(update, 700);
+
+        // Actualización constante cada 800ms
+        setInterval(updateDashboard, 800);
     </script>
 </body>
 </html>
-
