@@ -9,7 +9,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 class Resultado(BaseModel):
     valor: float
 
-# Estructura de datos fija para evitar el error 'undefined'
+# Estructura de memoria exacta para el index
 memoria = {
     "ultimo_valor": 0.0,
     "sugerencia": "⏳ ANALIZANDO",
@@ -30,7 +30,7 @@ async def recibir_resultado(res: Resultado):
     valor = res.valor
     memoria["ultimo_valor"] = valor
     
-    # Actualizar historial visual (burbujas)
+    # Historial para burbujas
     memoria["historial_visual"].insert(0, valor)
     if len(memoria["historial_visual"]) > 15:
         memoria["historial_visual"].pop()
@@ -40,7 +40,7 @@ async def recibir_resultado(res: Resultado):
         memoria["sugerencia"] = f"⏳ CARGANDO {len(hist)}/5"
         return {"status": "ok"}
 
-    # --- LÓGICA DE CÁLCULO ---
+    # LÓGICA DE CÁLCULO
     mediana = statistics.median(hist)
     azules = 0
     for v in hist:
@@ -58,12 +58,11 @@ async def recibir_resultado(res: Resultado):
         else: break
     memoria["radar_rosa"] = "🔥 ALTO" if rondas_sin_rosa > 25 else "❄️ BAJO"
 
-    # Targets Dinámicos
+    # Targets
     agresividad = 1.15 if score_final > 70 else 0.95
     val_s = round(max(1.25, (mediana * 0.82) * agresividad), 2)
     val_e = round(max(val_s * 1.6, (mediana * 1.5) * agresividad), 2)
 
-    # Estados del Sistema
     if score_final >= 75:
         memoria["sugerencia"] = "🔥 ENTRADA CONFIRMADA"
         memoria["fase"] = "🚀 MOMENTUM"
