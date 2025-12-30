@@ -3,102 +3,85 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aviator Elite Predictor</title>
+    <title>Aviator Elite Predictor V26</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;600;900&display=swap');
-        body { font-family: 'Outfit', sans-serif; background: #080a0f; color: white; overflow-x: hidden; }
-        .bg-main { background: radial-gradient(circle at 50% 0%, #1e293b 0%, #080a0f 100%); }
-        
-        /* Burbujas de Historial */
+        body { font-family: 'Outfit', sans-serif; background: #080a0f; color: white; }
+        .bg-pro { background: radial-gradient(circle at 50% 0%, #1e293b 0%, #080a0f 100%); }
         .bubble { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 900; min-width: 45px; text-align: center; border: 1px solid rgba(255,255,255,0.1); }
-        .b-blue { background: #3482ff; color: white; }
-        .b-purple { background: #913ef8; color: white; }
-        .b-pink { background: #c017b2; color: white; box-shadow: 0 0 10px #ff00ea; }
-
+        .b-blue { background: #3482ff; } .b-purple { background: #913ef8; } .b-pink { background: #c017b2; box-shadow: 0 0 10px #ff00ea; }
         .glass-card { background: rgba(20, 24, 35, 0.7); backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.05); }
-        .signal-glow { animation: signal-glow 2s infinite; }
-        @keyframes signal-glow { 0%, 100% { box-shadow: 0 0 20px rgba(34, 197, 94, 0.1); } 50% { box-shadow: 0 0 40px rgba(34, 197, 94, 0.4); } }
+        .signal-glow { animation: glow 2s infinite; }
+        @keyframes glow { 0%, 100% { box-shadow: 0 0 20px rgba(34, 197, 94, 0.1); } 50% { box-shadow: 0 0 40px rgba(34, 197, 94, 0.4); } }
     </style>
 </head>
-<body class="bg-main min-h-screen flex flex-col items-center">
+<body class="bg-pro min-h-screen flex flex-col items-center p-4">
 
-    <div class="w-full max-w-md p-4">
-        <!-- Top Status Bar -->
-        <header class="flex justify-between items-center py-4">
+    <div class="w-full max-w-md">
+        <!-- Header -->
+        <header class="flex justify-between items-center py-4 mb-2">
             <div>
                 <h1 class="text-xl font-black italic tracking-tighter">ELITE<span class="text-red-600">PREDICT</span></h1>
-                <p id="fase" class="text-[9px] font-bold text-blue-400 uppercase tracking-widest">Iniciando Sistema...</p>
+                <p id="fase" class="text-[9px] font-bold text-blue-400 uppercase tracking-widest">Iniciando...</p>
             </div>
             <div class="bg-white/5 border border-white/10 px-3 py-1.5 rounded-full flex items-center gap-2">
-                <div id="led" class="w-2 h-2 bg-red-500 rounded-full"></div>
-                <span class="text-[9px] font-black text-gray-400">GCP PRO V25</span>
+                <div id="led" class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                <span class="text-[9px] font-black text-gray-400 uppercase">GCP V26</span>
             </div>
         </header>
 
-        <!-- Historial de Rondas (Horizontal Scroll) -->
-        <div id="historial-container" class="flex gap-2 mb-6 overflow-x-auto py-2 no-scrollbar">
-            <!-- Burbujas dinámicas aquí -->
-        </div>
+        <!-- Burbujas de Historial -->
+        <div id="historial-container" class="flex gap-2 mb-6 overflow-x-auto py-2 no-scrollbar"></div>
 
-        <!-- Monitor de Telemetría -->
+        <!-- Monitor Principal -->
         <div class="glass-card rounded-[3rem] p-10 shadow-2xl text-center mb-6 relative">
             <p class="text-gray-500 text-[10px] font-bold uppercase tracking-[0.4em] mb-4">Última Ronda</p>
             <div id="val" class="text-8xl font-black mb-8 tracking-tighter">--</div>
 
             <div class="grid grid-cols-2 gap-4 mb-8">
-                <div class="bg-white/5 p-3 rounded-2xl">
+                <div class="bg-white/5 p-4 rounded-2xl">
                     <p class="text-[8px] text-gray-500 font-bold uppercase">Confianza</p>
                     <p id="prob" class="text-xl font-black text-blue-400">0%</p>
                 </div>
-                <div class="bg-white/5 p-3 rounded-2xl">
+                <div class="bg-white/5 p-4 rounded-2xl">
                     <p class="text-[8px] text-gray-500 font-bold uppercase">Radar Rosa</p>
-                    <p id="radar" class="text-xl font-black text-gray-300">BAJO</p>
+                    <p id="radar" class="text-xl font-black text-gray-300">--</p>
                 </div>
             </div>
 
-            <div id="box" class="bg-white/5 rounded-3xl p-6 border border-white/5 transition-all">
-                <p id="sug" class="text-lg font-black italic uppercase tracking-widest">Recopilando...</p>
+            <div id="box" class="bg-white/5 rounded-3xl p-6 border border-white/5 transition-all duration-500">
+                <p id="sug" class="text-lg font-black italic uppercase">Buscando Patrón</p>
             </div>
         </div>
 
-        <!-- Panel de Retiro de Alta Precisión -->
+        <!-- Panel de Targets -->
         <div class="grid grid-cols-2 gap-4 mb-8">
             <div class="glass-card p-6 rounded-[2.5rem] text-center">
                 <p class="text-[10px] text-green-500 font-bold uppercase mb-2">Retiro Seguro</p>
                 <p id="tp_s" class="text-4xl font-black text-white">--</p>
-                <p class="text-[8px] text-gray-600 mt-2 font-bold uppercase">93% Accuracy</p>
             </div>
             <div class="glass-card p-6 rounded-[2.5rem] text-center">
                 <p class="text-[10px] text-red-500 font-bold uppercase mb-2">Ganancia Alta</p>
                 <p id="tp_e" class="text-4xl font-black text-white">--</p>
-                <p class="text-[8px] text-gray-600 mt-2 font-bold uppercase">Momentum</p>
             </div>
         </div>
 
-        <!-- Botón de Acción Táctil -->
-        <button onclick="location.reload()" class="w-full py-5 bg-white text-black font-black text-xs uppercase tracking-widest rounded-[2rem] active:scale-95 transition-all shadow-xl mb-6">
-            Refrescar Telemetría
+        <button onclick="location.reload()" class="w-full py-5 bg-white text-black font-black text-xs uppercase tracking-widest rounded-[2rem] active:scale-95 transition-all shadow-xl">
+            Refrescar Sistema
         </button>
-
-        <p class="text-[8px] text-center text-gray-600 uppercase font-bold tracking-widest">
-            Ping: <span id="ping">0</span>ms | Latencia de Red: Óptima
-        </p>
     </div>
 
     <script>
+        // PEGA TU URL DE NGROK AQUÍ
         const API_URL = "https://cordlike-dylan-unstrenuously.ngrok-free.dev/data";
 
         async function update() {
-            const start = Date.now();
             try {
-                const response = await fetch(API_URL, {
-                    headers: { "ngrok-skip-browser-warning": "69420" }
-                });
-                const d = await response.json();
-                const latency = Date.now() - start;
+                const res = await fetch(API_URL, { headers: { "ngrok-skip-browser-warning": "69420" } });
+                const d = await res.json();
 
-                // Valores básicos
+                // Mapeo manual sin errores
                 document.getElementById('val').innerText = d.ultimo_valor + 'x';
                 document.getElementById('sug').innerText = d.sugerencia;
                 document.getElementById('prob').innerText = d.confianza;
@@ -106,39 +89,35 @@
                 document.getElementById('radar').innerText = d.radar_rosa;
                 document.getElementById('tp_s').innerText = d.tp_s;
                 document.getElementById('tp_e').innerText = d.tp_e;
-                document.getElementById('ping').innerText = latency;
 
-                // LED de sincronización
-                document.getElementById('led').className = "w-2 h-2 bg-green-500 rounded-full animate-pulse";
+                // Color Radar
+                const rad = document.getElementById('radar');
+                rad.className = d.radar_rosa.includes("ALTO") ? "text-xl font-black text-pink-500 animate-pulse" : "text-xl font-black text-gray-300";
 
-                // Render Historial de Burbujas
+                // Burbujas
                 const historyCont = document.getElementById('historial-container');
                 historyCont.innerHTML = "";
                 d.historial_visual.forEach(v => {
                     const span = document.createElement('span');
-                    let colorClass = "b-blue";
-                    if(v >= 10.0) colorClass = "b-pink";
-                    else if(v >= 2.0) colorClass = "b-purple";
-                    span.className = `bubble ${colorClass}`;
+                    let c = "b-blue";
+                    if(v >= 10) c = "b-pink"; else if(v >= 2) c = "b-purple";
+                    span.className = `bubble ${c}`;
                     span.innerText = v + 'x';
                     historyCont.appendChild(span);
                 });
 
-                // Estilos dinámicos del Panel
+                // Caja de Sugerencia
                 const box = document.getElementById('box');
-                if(d.sugerencia.includes("CONFIRMADA")) {
-                    box.className = "bg-green-600 rounded-3xl p-6 border border-green-400 signal-glow";
-                } else if(d.sugerencia.includes("POSIBLE")) {
-                    box.className = "bg-yellow-600/30 rounded-3xl p-6 border border-yellow-500";
-                } else {
-                    box.className = "bg-white/5 rounded-3xl p-6 border border-white/5";
-                }
+                if(d.sugerencia.includes("CONFIRMADA")) box.className = "bg-green-600 rounded-3xl p-6 border border-green-400 signal-glow";
+                else if(d.sugerencia.includes("POSIBLE")) box.className = "bg-yellow-600/30 rounded-3xl p-6 border border-yellow-500";
+                else box.className = "bg-white/5 rounded-3xl p-6 border border-white/5";
 
+                document.getElementById('led').className = "w-2 h-2 bg-green-500 rounded-full animate-pulse";
             } catch(e) {
                 document.getElementById('led').className = "w-2 h-2 bg-red-600 rounded-full";
             }
         }
-        setInterval(update, 800);
+        setInterval(update, 1000);
     </script>
 </body>
 </html>
