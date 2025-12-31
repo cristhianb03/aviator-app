@@ -1,8 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import pandas as pd
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier
 import statistics
-import collections
+import os
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -10,9 +13,10 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 class Resultado(BaseModel):
     valor: float
 
+# Memoria de la IA
 memoria = {
     "ultimo_valor": 0.0,
-    "sugerencia": "⏳ CALIBRANDO IA",
+    "sugerencia": "🧠 IA ENTRENANDO",
     "confianza": "0%",
     "radar_rosa": "0%",
     "tp_s": "--",
@@ -21,11 +25,32 @@ memoria = {
     "historial_visual": []
 }
 
-# IA de Grafos: Solo éxito si >= 1.50
-grafo = collections.defaultdict(lambda: collections.Counter())
+FILE_DB = 'base_datos_ia.csv'
 
-def categorizar(v):
-    return "EXITO" if v >= 1.50 else "FALLO"
+def preparar_modelo():
+    if not os.path.exists(FILE_DB): return None
+    
+    df = pd.read_csv(FILE_DB, names=['valor'])
+    if len(df) < 50: return None # Necesitamos al menos 50 juegos para que la IA sea lista
+
+    # Creamos "Features" (lo que la IA analiza)
+    df['target'] = (df['valor'].shift(-1) >= 1.50).astype(int) # ¿El siguiente fue >= 1.50?
+    df['prev1'] = df['valor'].shift(1)
+    df['prev2'] = df['valor'].shift(2)
+    df['prev3'] = df['valor'].shift(3)
+    df['media5'] = df['valor'].rolling(5).mean()
+    
+    df = df.dropna()
+    
+    if len(df) < 20: return None
+
+    # Entrenamos a la IA
+    X = df[['prev1', 'prev2', 'prev3', 'media5']]
+    y = df['target']
+    
+    model = RandomForestClassifier(n_estimators=50, max_depth=5)
+    model.fit(X, y)
+    return model
 
 @app.get("/data")
 async def get_data():
@@ -35,63 +60,55 @@ async def get_data():
 async def recibir_resultado(res: Resultado):
     valor = res.valor
     memoria["ultimo_valor"] = valor
-    memoria["historial_visual"].insert(0, valor)
-    if len(memoria["historial_visual"]) > 150: memoria["historial_visual"].pop()
+    memoria["historial_visual.insert(0, valor)
+    if len(memoria["historial_visual"]) > 15: memoria["historial_visual"].pop()
+
+    # Guardar para entrenamiento
+    with open(FILE_DB, 'a') as f:
+        f.write(f"{valor}\n")
 
     hist = memoria["historial_visual"]
-    if len(hist) < 15:
-        memoria["sugerencia"] = "📊 CARGANDO..."
-        return {"status": "ok"}
-
-    # --- 1. ENTRENAMIENTO DEL GRAFO ---
-    for i in range(len(hist) - 4):
-        nodo = tuple(categorizar(x) for x in hist[i+1:i+4])
-        resultado = categorizar(hist[i])
-        grafo[nodo][resultado] += 1
-
-    # --- 2. ANÁLISIS DE MOMENTUM (PARA ATRAPAR EL 40x) ---
-    rondas_sin_rosa = 0
-    for v in hist:
-        if v >= 10.0: break
-        rondas_sin_rosa += 1
     
-    # Si llevamos mucho tiempo sin un rosa, la presión de explosión sube
-    presion_explosion = min(99, rondas_sin_rosa * 2.5)
-    memoria["radar_rosa"] = f"{round(presion_explosion)}%"
-
-    # --- 3. CONSULTA DE PROBABILIDAD IA ---
-    situacion_actual = tuple(categorizar(x) for x in hist[:3])
-    posibilidades = grafo[situacion_actual]
-    total = sum(posibilidades.values())
-    prob_exito_150 = (posibilidades["EXITO"] / total * 100) if total > 0 else 0
-
-    # --- 4. CÁLCULO DE TARGETS CON SUELO 1.50x ---
-    mediana = statistics.median(hist[:20])
+    # 1. Intentar predecir con IA
+    model = preparar_modelo()
     
-    # Filtro estricto: El Retiro Seguro NUNCA será menor a 1.50
-    val_s = round(max(1.50, mediana * 0.92), 2)
-    
-    # Ganancia alta agresiva si el radar rosa está caliente
-    if presion_explosion > 70:
-        val_e = round(max(5.00, mediana * 3.0), 2)
-        memoria["fase"] = "🚀 BUSCANDO ROSA"
+    if model and len(hist) >= 5:
+        # Preparar datos actuales para la IA
+        media_act = statistics.mean(hist[:5])
+        current_features = np.array([[hist[0], hist[1], hist[2], media_act]])
+        
+        # Probabilidad de que el siguiente sea >= 1.50
+        prob_ia = model.predict_proba(current_features)[0][1] * 100
+        
+        # 2. Lógica de Seguridad (Filtro Anti-Succión)
+        # Si la IA detecta una racha de crashes muy bajos, baja la confianza
+        if all(v < 1.20 for v in hist[:2]): prob_ia = prob_ia * 0.3
+
+        memoria["confianza"] = f"{round(prob_ia)}%"
+        
+        # 3. Decisiones Basadas en IA
+        if prob_ia >= 85: # Solo si la IA está muy segura
+            mediana = statistics.median(hist)
+            # Retiro seguro NUNCA menor a 1.50
+            val_s = round(max(1.50, mediana * 0.95), 2)
+            val_e = round(max(val_s * 2.5, 5.0), 2) # Buscamos el premio alto que mencionaste
+            
+            memoria["sugerencia"] = "🔥 ENTRADA IA CONFIRMADA"
+            memoria["tp_s"] = f"{val_s}x"
+            memoria["tp_e"] = f"{val_e}x"
+            memoria["fase"] = "🚀 MOMENTUM IA"
+        elif prob_ia >= 60:
+            memoria["sugerencia"] = "⚠️ POSIBLE SEÑAL"
+            memoria["tp_s"] = "1.50x"
+            memoria["tp_e"] = "--"
+            memoria["fase"] = "⚖️ ESTABLE"
+        else:
+            memoria["sugerencia"] = "⏳ IA ANALIZANDO"
+            memoria["tp_s"] = "--"
+            memoria["tp_e"] = "--"
+            memoria["fase"] = "📊 RECAUDACIÓN"
     else:
-        val_e = round(max(val_s * 2.1, 3.00), 2)
-        memoria["fase"] = "⚖️ ESTABLE"
-
-    # --- 5. LÓGICA DE SEGURIDAD (CUÁNDO MOSTRAR) ---
-    # Si la probabilidad de llegar a 1.50 es baja (< 55%) o hay succión extrema
-    if prob_exito_150 < 55 or (hist[0] < 1.20 and hist[1] < 1.20):
-        memoria["sugerencia"] = "❌ RIESGO DE PÉRDIDA"
-        memoria["confianza"] = f"{round(prob_exito_150)}%"
-        memoria["tp_s"] = "--"
-        memoria["tp_e"] = "--"
-    else:
-        # SEÑAL VÁLIDA
-        memoria["sugerencia"] = "🔥 ENTRADA FUERTE" if prob_exito_150 > 75 else "⚠️ POSIBLE SEÑAL"
-        memoria["confianza"] = f"{round(prob_exito_150)}%"
-        memoria["tp_s"] = f"{val_s}x"
-        memoria["tp_e"] = f"{val_e}x"
+        memoria["sugerencia"] = f"⏳ IA RECOLECTANDO ({len(hist)}/50)"
 
     return {"status": "ok"}
 
