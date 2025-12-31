@@ -8,67 +8,54 @@ DEBUG_URL = "http://127.0.0.1:9222"
 
 def run():
     with sync_playwright() as p:
-        print("🌐 Iniciando Escáner Universal de Aviator...")
+        print("🔍 Iniciando Escaneo Profundo...")
         try:
-            # Nos vinculamos al Edge/Chrome que tienes abierto en puerto 9222
+            # Conexión al Edge abierto
             browser = p.chromium.connect_over_cdp(DEBUG_URL)
             context = browser.contexts[0]
-            print("✅ Conectado al navegador. Buscando el juego en cualquier pestaña...")
+            print("✅ Conectado a Edge.")
         except Exception as e:
-            print(f"❌ ERROR: No se detecta el navegador abierto. Abre Edge por CMD en el puerto 9222.")
+            print(f"❌ ERROR: Edge no detectado en el puerto 9222. Revisa el comando del CMD.")
             return
 
         u = None
-        # SELECTOR MAESTRO: Busca cualquier burbuja de Spribe en cualquier casino
-        # Cubre 1Win, Melbet, Betplay, Pin-up, etc.
-        selectors = [
-            ".bubble-multiplier", 
-            ".app-stats-item", 
-            ".payouts-block .payout",
-            "[class*='multiplier']",
-            "[class*='bubble']",
-            ".stats-list div"
-        ]
-        sel_string = ", ".join(selectors)
 
         while True:
             try:
-                encontrado_en_pestaña = False
-                
-                # RECORREMOS TODAS LAS PESTAÑAS (PAGES) DEL NAVEGADOR
+                encontrado = False
+                # Recorremos todas las pestañas
                 for page in context.pages:
-                    try:
-                        # Buscamos en el frame principal y en todos los iframes hijos
-                        for f in page.frames:
-                            # Intentamos localizar el primer número del historial
-                            el = f.locator(sel_string).first
+                    # Buscamos en cada rincón de la página (Frames)
+                    for f in page.frames:
+                        # BUSCADOR DINÁMICO: Buscamos cualquier cosa que parezca un multiplicador (ej: 1.50x)
+                        # Este selector es casi imposible de bloquear para el casino
+                        elementos = f.locator("text=/\\d+\\.\\d+x/").all()
+                        
+                        if len(elementos) > 0:
+                            # Tomamos el primero de la lista (el más reciente en el historial)
+                            texto = elementos[0].inner_text().lower().replace('x','').replace(',','.').strip()
                             
-                            if el and el.is_visible():
-                                texto = el.inner_text().lower().replace('x','').replace(',','.').strip()
-                                
-                                # Validamos que sea un número (float)
-                                try:
-                                    v = float(texto)
-                                    if v != u:
-                                        # ENVIAR AL SERVIDOR IA
-                                        res = requests.post(URL_SERVIDOR, json={"valor": v}, timeout=1)
-                                        if res.status_code == 200:
-                                            print(f"🎯 CAPTURADO UNIVERSAL: {v}x (En: {page.title()[:20]}...)")
-                                        u = v
-                                    encontrado_en_pestaña = True
-                                    break # Dato encontrado, salir de los frames
-                                except:
-                                    continue
-                        if encontrado_en_pestaña: break # Salir de las pestañas tras capturar
-                    except:
-                        continue # Si una pestaña falla (ej. cargando), pasamos a la siguiente
-
+                            try:
+                                v = float(texto)
+                                if v != u:
+                                    requests.post(URL_SERVIDOR, json={"valor": v}, timeout=1)
+                                    u = v
+                                    print(f"🎯 DATO CAPTURADO: {v}x (Fuente: {page.title()[:15]})")
+                                encontrado = True
+                                break
+                            except:
+                                continue
+                    if encontrado: break
+                
+                if not encontrado:
+                    # Imprime esto para saber que el script sigue intentando
+                    print("⏳ Escaneando pantalla... (Asegúrate de que el juego sea visible)")
+                    
             except Exception as e:
-                # print(f"Buscando... {e}")
                 pass
             
-            # Velocidad de escaneo: 0.4 segundos para no saturar el CPU
-            time.sleep(0.4)
+            # Revisa cada 0.5 segundos
+            time.sleep(0.5)
 
 if __name__ == "__main__":
     run()
