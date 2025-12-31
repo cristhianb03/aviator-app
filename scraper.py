@@ -8,62 +8,66 @@ DEBUG_URL = "http://127.0.0.1:9222"
 
 def run():
     with sync_playwright() as p:
-        print("🌐 Iniciando Motor de Escaneo Universal...")
+        print("🌐 Iniciando Escáner Universal de Aviator...")
         try:
-            # Nos vinculamos al Edge que tienes abierto
+            # Nos vinculamos al Edge/Chrome que tienes abierto en puerto 9222
             browser = p.chromium.connect_over_cdp(DEBUG_URL)
             context = browser.contexts[0]
-            print("✅ Conectado a Edge. Buscando casinos activos...")
+            print("✅ Conectado al navegador. Buscando el juego en cualquier pestaña...")
         except Exception as e:
-            print(f"❌ ERROR: Edge no detectado. Abrelo por CMD en puerto 9222.")
+            print(f"❌ ERROR: No se detecta el navegador abierto. Abre Edge por CMD en el puerto 9222.")
             return
 
         u = None
-        # Lista de palabras clave para detectar el juego en cualquier pestaña
-        casinos_validos = ["aviator", "1win", "melbet", "betplay", "1w-", "spribe"]
-        
-        # Selector Maestro: Cubre casi todas las versiones del historial de Spribe
-        selector_universal = ".bubble-multiplier, .app-stats-item, .payouts-block .payout, [class*='multiplier'], [class*='bubble']"
+        # SELECTOR MAESTRO: Busca cualquier burbuja de Spribe en cualquier casino
+        # Cubre 1Win, Melbet, Betplay, Pin-up, etc.
+        selectors = [
+            ".bubble-multiplier", 
+            ".app-stats-item", 
+            ".payouts-block .payout",
+            "[class*='multiplier']",
+            "[class*='bubble']",
+            ".stats-list div"
+        ]
+        sel_string = ", ".join(selectors)
 
         while True:
             try:
-                encontrado_en_alguna_pestaña = False
+                encontrado_en_pestaña = False
                 
-                # RECORREMOS TODAS LAS PESTAÑAS ABIERTAS
+                # RECORREMOS TODAS LAS PESTAÑAS (PAGES) DEL NAVEGADOR
                 for page in context.pages:
-                    url_actual = page.url.lower()
-                    
-                    # Verificamos si esta pestaña es un casino con Aviator
-                    if any(keyword in url_actual for keyword in casinos_validos):
-                        
-                        # Escaneamos los frames internos de esta pestaña
+                    try:
+                        # Buscamos en el frame principal y en todos los iframes hijos
                         for f in page.frames:
-                            try:
-                                el = f.locator(selector_universal).first
-                                if el and el.is_visible():
-                                    t = el.inner_text().lower().replace('x','').replace(',','.').strip()
-                                    v = float(t)
-                                    
+                            # Intentamos localizar el primer número del historial
+                            el = f.locator(sel_string).first
+                            
+                            if el and el.is_visible():
+                                texto = el.inner_text().lower().replace('x','').replace(',','.').strip()
+                                
+                                # Validamos que sea un número (float)
+                                try:
+                                    v = float(texto)
                                     if v != u:
-                                        # Enviar al Servidor
-                                        requests.post(URL_SERVIDOR, json={"valor": v}, timeout=1)
+                                        # ENVIAR AL SERVIDOR IA
+                                        res = requests.post(URL_SERVIDOR, json={"valor": v}, timeout=1)
+                                        if res.status_code == 200:
+                                            print(f"🎯 CAPTURADO UNIVERSAL: {v}x (En: {page.title()[:20]}...)")
                                         u = v
-                                        # Identificamos la fuente en el log
-                                        fuente = "MELBET" if "melbet" in url_actual else "1WIN/OTRO"
-                                        print(f"🎯 [{fuente}] CAPTURADO: {v}x")
-                                    
-                                    encontrado_en_alguna_pestaña = True
-                                    break # Dato encontrado en esta pestaña
-                            except:
-                                continue
-                    
-                    if encontrado_en_alguna_pestaña:
-                        break # Ya tenemos el dato más reciente del navegador
+                                    encontrado_en_pestaña = True
+                                    break # Dato encontrado, salir de los frames
+                                except:
+                                    continue
+                        if encontrado_en_pestaña: break # Salir de las pestañas tras capturar
+                    except:
+                        continue # Si una pestaña falla (ej. cargando), pasamos a la siguiente
 
             except Exception as e:
+                # print(f"Buscando... {e}")
                 pass
             
-            # Revisión rápida
+            # Velocidad de escaneo: 0.4 segundos para no saturar el CPU
             time.sleep(0.4)
 
 if __name__ == "__main__":
