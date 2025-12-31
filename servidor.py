@@ -15,7 +15,7 @@ class Resultado(BaseModel):
 
 FILE_DB = 'base_datos_quantum_v100.csv'
 
-# Memoria Maestra (Sincronizada con tu index.html)
+# Memoria Maestra Sincronizada
 memoria = {
     "ultimo_valor": 0.0,
     "sugerencia": "⏳ IA SINCRONIZANDO",
@@ -28,47 +28,50 @@ memoria = {
 }
 
 def motor_inferencia_ia(historial_completo):
-    if len(historial_completo) < 50:
+    # La IA requiere 100 datos para ser robusta (Lógica V100)
+    if len(historial_completo) < 100:
         return None
 
-    # 1. PREPARACIÓN DE DATAFRAME
-    df = pd.DataFrame(historial_completo[::-1], columns=['valor'])
-    
-    # 2. FEATURE ENGINEERING (La IA analiza 8 variables por ronda)
-    df['target_150'] = (df['valor'].shift(-1) >= 1.50).astype(int) # Clasificación
-    df['target_val'] = df['valor'].shift(-1) # Regresión
-    
-    for i in range(1, 6):
-        df[f'lag_{i}'] = df['valor'].shift(i)
-    
-    df['ema_short'] = df['valor'].ewm(span=3).mean()
-    df['std_dev'] = df['valor'].rolling(window=5).std()
-    
-    # RSI (Relative Strength Index) - El pulso del casino
-    delta = df['valor'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=10).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=10).mean()
-    df['rsi'] = 100 - (100 / (1 + (gain/loss)))
-    
-    df = df.dropna()
-    if len(df) < 30: return None
+    try:
+        # 1. PREPARACIÓN DE DATAFRAME
+        df = pd.DataFrame(historial_completo[::-1], columns=['valor'])
+        
+        # 2. FEATURE ENGINEERING (8 variables)
+        df['target_150'] = (df['valor'].shift(-1) >= 1.50).astype(int)
+        df['target_val'] = df['valor'].shift(-1)
+        for i in range(1, 6):
+            df[f'lag_{i}'] = df['valor'].shift(i)
+        
+        df['ema_short'] = df['valor'].ewm(span=3).mean()
+        df['std_dev'] = df['valor'].rolling(window=5).std()
+        
+        # RSI
+        delta = df['valor'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=10).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=10).mean()
+        rs = gain / loss if loss > 0 else 1
+        df['rsi'] = 100 - (100 / (1 + rs))
+        
+        df = df.dropna()
+        if len(df) < 30: return None
 
-    features = ['lag_1', 'lag_2', 'lag_3', 'ema_short', 'std_dev', 'rsi']
-    X = df[features]
-    
-    # 3. ENTRENAMIENTO DE ENSAMBLE (100% IA)
-    clf = RandomForestClassifier(n_estimators=100, max_depth=8, random_state=42)
-    clf.fit(X, df['target_150'])
-    
-    reg = RandomForestRegressor(n_estimators=100, max_depth=8, random_state=42)
-    reg.fit(X, df['target_val'])
-    
-    # 4. PREDICCIÓN ACTUAL
-    last_data = X.tail(1)
-    prob_success = clf.predict_proba(last_data)[0][1] * 100
-    pred_value = reg.predict(last_data)[0]
-    
-    return round(prob_success, 2), round(pred_value, 2), df['rsi'].iloc[-1]
+        features = ['lag_1', 'lag_2', 'lag_3', 'ema_short', 'std_dev', 'rsi']
+        X = df[features]
+        
+        # 3. ENTRENAMIENTO DE ENSAMBLE
+        clf = RandomForestClassifier(n_estimators=100, max_depth=8, random_state=42)
+        clf.fit(X, df['target_150'])
+        reg = RandomForestRegressor(n_estimators=100, max_depth=8, random_state=42)
+        reg.fit(X, df['target_val'])
+        
+        # 4. PREDICCIÓN
+        last_data = X.tail(1)
+        prob_success = clf.predict_proba(last_data)[0][1] * 100
+        pred_value = reg.predict(last_data)[0]
+        
+        return round(prob_success, 2), round(pred_value, 2), df['rsi'].iloc[-1]
+    except:
+        return None
 
 @app.get("/data")
 async def get_data():
@@ -78,43 +81,44 @@ async def get_data():
 async def recibir_resultado(res: Resultado):
     valor = res.valor
     
-    # --- AJUSTE SOLICITADO: FILTRO ANTI-DUPLICADOS ---
-    # Si el valor que llega es igual al último procesado, salimos inmediatamente
+    # --- FILTRO DE DUPLICADOS ---
     if valor == memoria["ultimo_valor"]:
-        return {"status": "skipped_duplicate"}
+        return {"status": "ignorado_duplicado"}
 
     memoria["ultimo_valor"] = valor
     
-    # Historial para la App
+    # Historial para la App (Insertar y limitar a 15)
     memoria["historial_visual"].insert(0, valor)
-    if len(memoria["historial_visual"]) > 15: memoria["historial_visual"].pop()
+    if len(memoria["historial_visual"]) > 15: 
+        memoria["historial_visual"].pop()
     
     # Guardar en DB para entrenamiento
     with open(FILE_DB, 'a') as f: f.write(f"{valor}\n")
 
-    # Leer historial completo para la IA (hasta 150 registros)
+    # Leer historial completo para la IA
     try:
-        with open(FILE_DB, 'r') as f:
-            total_hist = [float(line.strip()) for line in f.readlines()][-150:]
+        if os.path.exists(FILE_DB):
+            with open(FILE_DB, 'r') as f:
+                total_hist = [float(line.strip()) for line in f.readlines() if line.strip()][-150:]
+        else:
+            total_hist = []
     except: total_hist = []
 
-    # EJECUCIÓN DEL MOTOR CUÁNTICO
+    # EJECUCIÓN DEL MOTOR IA
     resultado_ia = motor_inferencia_ia(total_hist)
     
     if resultado_ia:
         prob, val_esperado, rsi_actual = resultado_ia
-        
-        # Sincronizar Confianza
         memoria["confianza"] = f"{round(prob)}%"
         
-        # Lógica de Radar Rosa (Cálculo Estocástico)
+        # Radar Rosa
         dist_rosa = 0
         for v in total_hist[::-1]:
             if v >= 10.0: break
             dist_rosa += 1
         memoria["radar_rosa"] = f"{min(99, dist_rosa * 2)}%"
 
-        # --- TOMA DE DECISIONES 100% IA ---
+        # TARGETS 100% IA (Suelo 1.50)
         t_seguro = max(1.50, round(val_esperado * 0.82, 2))
         t_explosivo = max(t_seguro + 0.5, round(val_esperado * 1.4, 2))
 
@@ -128,16 +132,14 @@ async def recibir_resultado(res: Resultado):
             memoria["fase"] = "⚖️ ESTABLE"
             memoria["tp_s"] = "1.50x"
             memoria["tp_e"] = "--"
-        elif rsi_actual > 70 or all(v < 1.2 for v in total_hist[-2:]):
-            memoria["sugerencia"] = "🛑 NO ENTRAR (RIESGO)"
-            memoria["fase"] = "📊 RECAUDACIÓN"
-            memoria["tp_s"] = "--"; memoria["tp_e"] = "--"
         else:
             memoria["sugerencia"] = "⏳ BUSCANDO PATRÓN"
+            memoria["fase"] = "📊 RECAUDACIÓN"
             memoria["tp_s"] = "--"; memoria["tp_e"] = "--"
-            memoria["fase"] = "ESCANEO"
     else:
+        # El contador ahora es real basado en el archivo CSV
         memoria["sugerencia"] = f"🧠 ENTRENANDO IA ({len(total_hist)}/100)"
+        memoria["fase"] = "APRENDIENDO"
 
     return {"status": "ok"}
 
