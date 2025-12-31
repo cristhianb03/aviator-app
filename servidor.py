@@ -22,40 +22,44 @@ memoria = {
     "radar_rosa": "0%",
     "tp_s": "--",
     "tp_e": "--",
-    "fase": "APRENDIENDO",
+    "fase": "CALIBRANDO",
     "historial_visual": []
 }
 
-def contar_registros_totales():
-    if not os.path.exists(FILE_DB): return 0
-    try:
-        df = pd.read_csv(FILE_DB, names=['valor'])
-        return len(df)
-    except:
-        return 0
-
-def preparar_modelo_ia():
+def preparar_ia_robusta():
     try:
         if not os.path.exists(FILE_DB): return None
         df = pd.read_csv(FILE_DB, names=['valor'])
-        if len(df) < 50: return None # Mínimo 50 para empezar a ser inteligente
+        if len(df) < 100: return None # Subimos a 100 para que sea más "madura"
 
-        # Entrenamiento para predecir si el siguiente es >= 1.50
+        # --- INGENIERÍA DE ATRIBUTOS (FEATURE ENGINEERING) ---
         df['target'] = (df['valor'].shift(-1) >= 1.50).astype(int)
-        df['v1'] = df['valor'].shift(1)
-        df['v2'] = df['valor'].shift(2)
+        
+        # Atributos de Retraso (Lags)
+        for i in range(1, 6):
+            df[f'v{i}'] = df['valor'].shift(i)
+        
+        # Volatilidad y Tendencia (EMA)
+        df['ema5'] = df['valor'].ewm(span=5, adjust=False).mean()
         df['std5'] = df['valor'].rolling(5).std()
+        
+        # Indicador de "Hambre" del casino (RSI simple)
+        df['ganancias_recientes'] = (df['valor'] >= 2.0).rolling(10).sum()
+        
         df = df.dropna()
+        if len(df) < 50: return None
 
-        if len(df) < 30: return None
-
-        X = df[['v1', 'v2', 'std5']]
+        # Selección de columnas para el aprendizaje
+        features = ['v1', 'v2', 'v3', 'ema5', 'std5', 'ganancias_recientes']
+        X = df[features]
         y = df['target']
         
-        model = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
+        # Bosque Aleatorio más profundo para mayor precisión
+        model = RandomForestClassifier(n_estimators=150, max_depth=10, random_state=42)
         model.fit(X, y)
-        return model
-    except:
+        return model, features
+    except Exception as e:
+        print(f"Error entrenamiento: {e}")
         return None
 
 @app.get("/data")
@@ -67,66 +71,76 @@ async def recibir_resultado(res: Resultado):
     valor = res.valor
     memoria["ultimo_valor"] = valor
     
-    # Burbujas para la App (máximo 15)
+    # Actualizar burbujas visuales
     memoria["historial_visual"].insert(0, valor)
-    if len(memoria["historial_visual"]) > 15:
-        memoria["historial_visual"].pop()
+    if len(memoria["historial_visual"]) > 15: memoria["historial_visual"].pop()
 
-    # Guardar en base de datos para la IA
+    # Guardar dato para aprendizaje perpetuo
     with open(FILE_DB, 'a') as f:
         f.write(f"{valor}\n")
 
-    # Contar datos reales en el archivo
-    total_datos = contar_registros_totales()
-    hist = memoria["historial_visual"]
-    model = preparar_modelo_ia()
+    # Contar registros reales del archivo
+    try:
+        total_data = pd.read_csv(FILE_DB).shape[0]
+    except:
+        total_data = 0
+
+    ia_data = preparar_ia_robusta()
     
-    if total_datos >= 50 and model and len(hist) >= 5:
+    if ia_data and len(memoria["historial_visual"]) >= 10:
+        model, feat_names = ia_data
         try:
-            # PREDICCIÓN CON IA
-            std_act = statistics.stdev(hist[:5])
-            features = np.array([[hist[0], hist[1], std_act]])
-            prob_ia = model.predict_proba(features)[0][1] * 100
+            hist = memoria["historial_visual"]
+            # Preparar vector de datos actuales para la predicción
+            ema5_act = statistics.mean(hist[:5]) # Aproximación rápida
+            std5_act = statistics.stdev(hist[:5])
+            gan_act = len([v for v in hist[:10] if v >= 2.0])
             
-            # Filtro de seguridad (Anti-succión)
-            if all(v < 1.30 for v in hist[:2]): prob_ia *= 0.2
+            current_x = pd.DataFrame([[hist[0], hist[1], hist[2], ema5_act, std5_act, gan_act]], 
+                                     columns=feat_names)
             
-            conf_final = round(prob_ia)
-            memoria["confianza"] = f"{conf_final}%"
+            # Predicción de probabilidad
+            prob = model.predict_proba(current_x)[0][1] * 100
+            
+            # FILTRO DE SEGURIDAD (Si el último fue 1.0x, la IA se pone en alerta)
+            if valor < 1.10: prob += 15
+            if all(v < 1.25 for v in hist[:2]): prob *= 0.5 # Protección succión
+            
+            conf_f = min(round(prob), 99)
+            memoria["confianza"] = f"{conf_f}%"
 
-            # LÓGICA DE RETIRO (Mínimo 1.50x)
-            mediana = statistics.median(hist)
-            val_s = round(max(1.50, mediana * 0.94), 2)
-            val_e = round(max(val_s * 2.2, 4.5), 2)
+            # CÁLCULO DE TARGETS (Suelo estricto 1.50x)
+            mediana = statistics.median(hist[:20])
+            val_s = round(max(1.50, mediana * 0.96), 2)
+            val_e = round(max(val_s * 2.2, 4.8), 2)
 
-            if conf_final >= 80:
-                memoria["sugerencia"] = "🔥 ENTRADA IA CONFIRMADA"
+            if conf_f >= 85:
+                memoria["sugerencia"] = "🔥 ENTRADA TITANIUM"
                 memoria["tp_s"] = f"{val_s}x"
                 memoria["tp_e"] = f"{val_e}x"
-                memoria["fase"] = "🚀 PRECISIÓN ALTA"
-            elif conf_final >= 55:
-                memoria["sugerencia"] = "⚠️ SEÑAL EN ANÁLISIS"
+                memoria["fase"] = "🚀 ALTA PRECISIÓN"
+            elif conf_f >= 60:
+                memoria["sugerencia"] = "⚠️ SEÑAL MODERADA"
                 memoria["tp_s"] = "1.50x"
                 memoria["tp_e"] = "--"
                 memoria["fase"] = "⚖️ ESTABLE"
             else:
-                memoria["sugerencia"] = "⏳ BUSCANDO PATRÓN"
-                memoria["tp_s"] = "--"
-                memoria["tp_e"] = "--"
+                memoria["sugerencia"] = "🛑 NO ENTRAR"
+                memoria["tp_s"] = "--"; memoria["tp_e"] = "--"
                 memoria["fase"] = "📊 RECAUDACIÓN"
+
         except Exception as e:
-            print(f"Error IA: {e}")
+            print(f"Error predicción: {e}")
     else:
-        # AHORA EL CONTADOR MOSTRARÁ EL TOTAL REAL (50+)
-        memoria["sugerencia"] = f"🧠 IA RECOLECTANDO ({total_datos}/50)"
+        memoria["sugerencia"] = f"🧠 ENTRENANDO IA ({total_data}/100)"
         memoria["fase"] = "APRENDIENDO"
 
-    # Radar Rosa
+    # Radar Rosa por Déficit
     dist_r = 0
-    for v in hist:
+    for v in memoria["historial_visual"]:
         if v >= 10.0: break
         dist_r += 1
-    memoria["radar_rosa"] = f"{min(99, dist_r * 3)}%"
+    memoria["radar_rosa"] = f"{min(99, dist_r * 4)}%"
 
     return {"status": "ok"}
 
