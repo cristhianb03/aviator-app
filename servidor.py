@@ -30,27 +30,32 @@ FILE_DB = 'base_datos_ia.csv'
 def preparar_modelo():
     if not os.path.exists(FILE_DB): return None
     
-    df = pd.read_csv(FILE_DB, names=['valor'])
-    if len(df) < 50: return None # Necesitamos al menos 50 juegos para que la IA sea lista
+    # Leemos la base de datos acumulada
+    try:
+        df = pd.read_csv(FILE_DB, names=['valor'])
+        if len(df) < 60: return None # Esperamos 60 juegos para tener base sólida
 
-    # Creamos "Features" (lo que la IA analiza)
-    df['target'] = (df['valor'].shift(-1) >= 1.50).astype(int) # ¿El siguiente fue >= 1.50?
-    df['prev1'] = df['valor'].shift(1)
-    df['prev2'] = df['valor'].shift(2)
-    df['prev3'] = df['valor'].shift(3)
-    df['media5'] = df['valor'].rolling(5).mean()
-    
-    df = df.dropna()
-    
-    if len(df) < 20: return None
+        # CREACIÓN DE ATRIBUTOS (Lo que la IA analiza)
+        # Objetivo: 1 si el siguiente es >= 1.50, 0 si falla
+        df['target'] = (df['valor'].shift(-1) >= 1.50).astype(int)
+        df['v1'] = df['valor'].shift(1) # Juego anterior
+        df['v2'] = df['valor'].shift(2) # Hace 2 juegos
+        df['v3'] = df['valor'].shift(3) # Hace 3 juegos
+        # Volatilidad reciente
+        df['std5'] = df['valor'].rolling(5).std()
+        
+        df = df.dropna()
+        if len(df) < 30: return None
 
-    # Entrenamos a la IA
-    X = df[['prev1', 'prev2', 'prev3', 'media5']]
-    y = df['target']
-    
-    model = RandomForestClassifier(n_estimators=50, max_depth=5)
-    model.fit(X, y)
-    return model
+        X = df[['v1', 'v2', 'v3', 'std5']]
+        y = df['target']
+        
+        # Entrenamos un Bosque Aleatorio (IA de Clasificación)
+        model = RandomForestClassifier(n_estimators=100, max_depth=7, random_state=42)
+        model.fit(X, y)
+        return model
+    except:
+        return None
 
 @app.get("/data")
 async def get_data():
@@ -60,55 +65,59 @@ async def get_data():
 async def recibir_resultado(res: Resultado):
     valor = res.valor
     memoria["ultimo_valor"] = valor
-    memoria["historial_visual.insert(0, valor)
-    if len(memoria["historial_visual"]) > 15: memoria["historial_visual"].pop()
+    
+    # CORRECCIÓN DE LA LÍNEA 63 (Sintaxis arreglada)
+    memoria["historial_visual"].insert(0, valor)
+    if len(memoria["historial_visual"]) > 15:
+        memoria["historial_visual"].pop()
 
-    # Guardar para entrenamiento
+    # Guardar en archivo para que la IA aprenda
     with open(FILE_DB, 'a') as f:
         f.write(f"{valor}\n")
 
     hist = memoria["historial_visual"]
-    
-    # 1. Intentar predecir con IA
     model = preparar_modelo()
     
     if model and len(hist) >= 5:
-        # Preparar datos actuales para la IA
-        media_act = statistics.mean(hist[:5])
-        current_features = np.array([[hist[0], hist[1], hist[2], media_act]])
-        
-        # Probabilidad de que el siguiente sea >= 1.50
-        prob_ia = model.predict_proba(current_features)[0][1] * 100
-        
-        # 2. Lógica de Seguridad (Filtro Anti-Succión)
-        # Si la IA detecta una racha de crashes muy bajos, baja la confianza
-        if all(v < 1.20 for v in hist[:2]): prob_ia = prob_ia * 0.3
-
-        memoria["confianza"] = f"{round(prob_ia)}%"
-        
-        # 3. Decisiones Basadas en IA
-        if prob_ia >= 85: # Solo si la IA está muy segura
-            mediana = statistics.median(hist)
-            # Retiro seguro NUNCA menor a 1.50
-            val_s = round(max(1.50, mediana * 0.95), 2)
-            val_e = round(max(val_s * 2.5, 5.0), 2) # Buscamos el premio alto que mencionaste
+        # Preparar los datos actuales para que la IA prediga
+        try:
+            std_act = statistics.stdev(hist[:5])
+            features = np.array([[hist[0], hist[1], hist[2], std_act]])
             
-            memoria["sugerencia"] = "🔥 ENTRADA IA CONFIRMADA"
-            memoria["tp_s"] = f"{val_s}x"
-            memoria["tp_e"] = f"{val_e}x"
-            memoria["fase"] = "🚀 MOMENTUM IA"
-        elif prob_ia >= 60:
-            memoria["sugerencia"] = "⚠️ POSIBLE SEÑAL"
-            memoria["tp_s"] = "1.50x"
-            memoria["tp_e"] = "--"
-            memoria["fase"] = "⚖️ ESTABLE"
-        else:
-            memoria["sugerencia"] = "⏳ IA ANALIZANDO"
-            memoria["tp_s"] = "--"
-            memoria["tp_e"] = "--"
-            memoria["fase"] = "📊 RECAUDACIÓN"
+            # Probabilidad de éxito para 1.50x
+            prob_ia = model.predict_proba(features)[0][1] * 100
+            
+            # FILTRO DE SEGURIDAD (Si el casino succiona, bajamos confianza)
+            if all(v < 1.30 for v in hist[:2]): prob_ia *= 0.4
+            
+            conf_final = round(prob_ia)
+            memoria["confianza"] = f"{conf_final}%"
+
+            # --- LÓGICA DE SALIDA SEGURA 1.50x ---
+            if conf_final >= 82: # ALTA CERTEZA
+                mediana = statistics.median(hist)
+                # El retiro seguro NUNCA será menor a 1.50x
+                val_s = round(max(1.50, mediana * 0.95), 2)
+                val_e = round(max(val_s * 2.5, 4.0), 2)
+                
+                memoria["sugerencia"] = "🔥 ENTRADA IA CONFIRMADA"
+                memoria["tp_s"] = f"{val_s}x"
+                memoria["tp_e"] = f"{val_e}x"
+                memoria["fase"] = "🚀 MOMENTUM ALTO"
+            elif conf_final >= 60:
+                memoria["sugerencia"] = "⚠️ SEÑAL EN ANÁLISIS"
+                memoria["tp_s"] = "1.50x" # Mínimo estricto
+                memoria["tp_e"] = "--"
+                memoria["fase"] = "⚖️ ESTABLE"
+            else:
+                memoria["sugerencia"] = "⏳ BUSCANDO PATRÓN"
+                memoria["tp_s"] = "--"
+                memoria["tp_e"] = "--"
+                memoria["fase"] = "📊 RECAUDACIÓN"
+        except:
+            pass
     else:
-        memoria["sugerencia"] = f"⏳ IA RECOLECTANDO ({len(hist)}/50)"
+        memoria["sugerencia"] = f"⏳ IA ENTRENANDO ({len(hist)}/60)"
 
     return {"status": "ok"}
 
