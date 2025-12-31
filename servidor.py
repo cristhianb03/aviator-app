@@ -13,53 +13,60 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 class Resultado(BaseModel):
     valor: float
 
-FILE_DB = 'base_datos_ia_pro.csv'
+FILE_DB = 'base_datos_ia_final.csv'
 
 memoria = {
     "ultimo_valor": 0.0,
-    "sugerencia": "🧠 IA INICIANDO",
+    "sugerencia": "🧠 IA CALCULANDO",
     "confianza": "0%",
     "radar_rosa": "0%",
     "tp_s": "--",
     "tp_e": "--",
-    "fase": "CALIBRANDO",
+    "fase": "ESCANEO",
     "historial_visual": []
 }
 
-def preparar_ia_robusta():
+def preparar_ia_maestra():
     try:
         if not os.path.exists(FILE_DB): return None
         df = pd.read_csv(FILE_DB, names=['valor'])
-        if len(df) < 100: return None # Subimos a 100 para que sea más "madura"
+        if len(df) < 100: return None 
 
-        # --- INGENIERÍA DE ATRIBUTOS (FEATURE ENGINEERING) ---
+        # --- INGENIERÍA DE ATRIBUTOS AVANZADA ---
         df['target'] = (df['valor'].shift(-1) >= 1.50).astype(int)
         
-        # Atributos de Retraso (Lags)
-        for i in range(1, 6):
-            df[f'v{i}'] = df['valor'].shift(i)
+        # 1. Lags (Pasado inmediato)
+        df['v1'] = df['valor'].shift(1)
+        df['v2'] = df['valor'].shift(2)
         
-        # Volatilidad y Tendencia (EMA)
-        df['ema5'] = df['valor'].ewm(span=5, adjust=False).mean()
-        df['std5'] = df['valor'].rolling(5).std()
+        # 2. EMA (Tendencia Exponencial)
+        df['ema'] = df['valor'].ewm(span=5, adjust=False).mean()
         
-        # Indicador de "Hambre" del casino (RSI simple)
-        df['ganancias_recientes'] = (df['valor'] >= 2.0).rolling(10).sum()
+        # 3. RSI (Fuerza Relativa - ¿Casino lleno o vacío?)
+        delta = df['valor'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=10).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=10).mean()
+        rs = gain / loss
+        df['rsi'] = 100 - (100 / (1 + rs))
+        
+        # 4. Patrón Binario (0=Azul, 1=Verde)
+        df['bin'] = (df['valor'] >= 2.0).astype(int)
+        df['pattern'] = df['bin'].shift(1).astype(str) + df['bin'].shift(2).astype(str)
         
         df = df.dropna()
-        if len(df) < 50: return None
+        if len(df) < 60: return None
 
-        # Selección de columnas para el aprendizaje
-        features = ['v1', 'v2', 'v3', 'ema5', 'std5', 'ganancias_recientes']
+        # Variables que la IA va a estudiar
+        features = ['v1', 'v2', 'ema', 'rsi']
         X = df[features]
         y = df['target']
         
-        # Bosque Aleatorio más profundo para mayor precisión
-        model = RandomForestClassifier(n_estimators=150, max_depth=10, random_state=42)
+        # Modelo de Bosque Aleatorio Robusto
+        model = RandomForestClassifier(n_estimators=200, max_depth=12, random_state=42)
         model.fit(X, y)
-        return model, features
+        return model, features, df['rsi'].iloc[-1]
     except Exception as e:
-        print(f"Error entrenamiento: {e}")
+        print(f"Error IA: {e}")
         return None
 
 @app.get("/data")
@@ -70,77 +77,67 @@ async def get_data():
 async def recibir_resultado(res: Resultado):
     valor = res.valor
     memoria["ultimo_valor"] = valor
-    
-    # Actualizar burbujas visuales
     memoria["historial_visual"].insert(0, valor)
-    if len(memoria["historial_visual"]) > 15: memoria["historial_visual"].pop()
+    if len(memoria["historial_visual"]) > 20: memoria["historial_visual"].pop()
 
-    # Guardar dato para aprendizaje perpetuo
+    # Guardar para el entrenamiento perpetuo
     with open(FILE_DB, 'a') as f:
         f.write(f"{valor}\n")
 
-    # Contar registros reales del archivo
+    # Obtener total de datos para el contador
     try:
-        total_data = pd.read_csv(FILE_DB).shape[0]
-    except:
-        total_data = 0
+        with open(FILE_DB, 'r') as f:
+            total_data = sum(1 for line in f)
+    except: total_data = 0
 
-    ia_data = preparar_ia_robusta()
+    ia_engine = preparar_ia_maestra()
     
-    if ia_data and len(memoria["historial_visual"]) >= 10:
-        model, feat_names = ia_data
+    if ia_engine and len(memoria["historial_visual"]) >= 10:
+        model, feat_names, current_rsi = ia_engine
         try:
             hist = memoria["historial_visual"]
-            # Preparar vector de datos actuales para la predicción
-            ema5_act = statistics.mean(hist[:5]) # Aproximación rápida
-            std5_act = statistics.stdev(hist[:5])
-            gan_act = len([v for v in hist[:10] if v >= 2.0])
+            # Preparar datos actuales
+            ema_act = statistics.mean(hist[:5])
+            # Simulación de RSI actual
+            current_x = pd.DataFrame([[hist[0], hist[1], ema_act, current_rsi]], columns=feat_names)
             
-            current_x = pd.DataFrame([[hist[0], hist[1], hist[2], ema5_act, std5_act, gan_act]], 
-                                     columns=feat_names)
-            
-            # Predicción de probabilidad
+            # PREDICCIÓN DE PROBABILIDAD PARA 1.50x
             prob = model.predict_proba(current_x)[0][1] * 100
             
-            # FILTRO DE SEGURIDAD (Si el último fue 1.0x, la IA se pone en alerta)
-            if valor < 1.10: prob += 15
-            if all(v < 1.25 for v in hist[:2]): prob *= 0.5 # Protección succión
+            # FILTROS DE SEGURIDAD (ANTI-SUCCIÓN)
+            if valor < 1.10: prob += 15 # Bono rebote
+            if all(v < 1.25 for v in hist[:2]): prob *= 0.4 # Protección contra racha negra
             
             conf_f = min(round(prob), 99)
             memoria["confianza"] = f"{conf_f}%"
 
-            # CÁLCULO DE TARGETS (Suelo estricto 1.50x)
-            mediana = statistics.median(hist[:20])
-            val_s = round(max(1.50, mediana * 0.96), 2)
-            val_e = round(max(val_s * 2.2, 4.8), 2)
+            # CÁLCULO DE TARGETS (SUELO 1.50x)
+            mediana = statistics.median(hist[:25])
+            # El seguro se ajusta según la confianza de la IA
+            val_s = round(max(1.50, mediana * 0.94 if conf_f > 80 else 1.50), 2)
+            val_e = round(max(val_s * 2.2, 5.0 if current_rsi < 40 else 3.0), 2)
 
+            # ESTADOS DE LA IA
             if conf_f >= 85:
-                memoria["sugerencia"] = "🔥 ENTRADA TITANIUM"
+                memoria["sugerencia"] = "🔥 ENTRADA CUÁNTICA"
                 memoria["tp_s"] = f"{val_s}x"
                 memoria["tp_e"] = f"{val_e}x"
                 memoria["fase"] = "🚀 ALTA PRECISIÓN"
-            elif conf_f >= 60:
+            elif conf_f >= 65:
                 memoria["sugerencia"] = "⚠️ SEÑAL MODERADA"
                 memoria["tp_s"] = "1.50x"
                 memoria["tp_e"] = "--"
-                memoria["fase"] = "⚖️ ESTABLE"
+                memoria["fase"] = "⚖️ MERCADO ESTABLE"
             else:
                 memoria["sugerencia"] = "🛑 NO ENTRAR"
                 memoria["tp_s"] = "--"; memoria["tp_e"] = "--"
                 memoria["fase"] = "📊 RECAUDACIÓN"
 
         except Exception as e:
-            print(f"Error predicción: {e}")
+            print(f"Error Predicción: {e}")
     else:
         memoria["sugerencia"] = f"🧠 ENTRENANDO IA ({total_data}/100)"
         memoria["fase"] = "APRENDIENDO"
-
-    # Radar Rosa por Déficit
-    dist_r = 0
-    for v in memoria["historial_visual"]:
-        if v >= 10.0: break
-        dist_r += 1
-    memoria["radar_rosa"] = f"{min(99, dist_r * 4)}%"
 
     return {"status": "ok"}
 
