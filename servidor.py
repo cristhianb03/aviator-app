@@ -1,10 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import statistics
-import collections
 import pandas as pd
 import numpy as np
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+import statistics
+import os
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -12,21 +13,64 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 class Resultado(BaseModel):
     valor: float
 
-# Estructura Maestra Sincronizada
+FILE_DB = 'base_datos_quantum_v100.csv'
+
+# Memoria Maestra (Sincronizada con tu index.html)
 memoria = {
     "ultimo_valor": 0.0,
-    "sugerencia": "⏳ ANALIZANDO",
+    "sugerencia": "⏳ IA SINCRONIZANDO",
     "confianza": "0%",
     "radar_rosa": "0%",
-    "fase": "CALIBRANDO",
     "tp_s": "--",
     "tp_e": "--",
+    "fase": "ANALIZANDO",
     "historial_visual": []
 }
 
-# Motor de Grafos para 1.50x
-grafo = collections.defaultdict(lambda: collections.Counter())
-def cat_150(v): return "OK" if v >= 1.50 else "FAIL"
+def motor_inferencia_ia(historial_completo):
+    if len(historial_completo) < 50:
+        return None
+
+    # 1. PREPARACIÓN DE DATAFRAME
+    df = pd.DataFrame(historial_completo[::-1], columns=['valor'])
+    
+    # 2. FEATURE ENGINEERING (La IA analiza 8 variables por ronda)
+    df['target_150'] = (df['valor'].shift(-1) >= 1.50).astype(int) # Clasificación
+    df['target_val'] = df['valor'].shift(-1) # Regresión
+    
+    for i in range(1, 6):
+        df[f'lag_{i}'] = df['valor'].shift(i)
+    
+    df['ema_short'] = df['valor'].ewm(span=3).mean()
+    df['std_dev'] = df['valor'].rolling(window=5).std()
+    
+    # RSI (Relative Strength Index) - El pulso del casino
+    delta = df['valor'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=10).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=10).mean()
+    df['rsi'] = 100 - (100 / (1 + (gain/loss)))
+    
+    df = df.dropna()
+    if len(df) < 30: return None
+
+    features = ['lag_1', 'lag_2', 'lag_3', 'ema_short', 'std_dev', 'rsi']
+    X = df[features]
+    
+    # 3. ENTRENAMIENTO DE ENSAMBLE (100% IA)
+    # Modelo A: Probabilidad de éxito
+    clf = RandomForestClassifier(n_estimators=100, max_depth=8, random_state=42)
+    clf.fit(X, df['target_150'])
+    
+    # Modelo B: Valor esperado del próximo crash
+    reg = RandomForestRegressor(n_estimators=100, max_depth=8, random_state=42)
+    reg.fit(X, df['target_val'])
+    
+    # 4. PREDICCIÓN ACTUAL
+    last_data = X.tail(1)
+    prob_success = clf.predict_proba(last_data)[0][1] * 100
+    pred_value = reg.predict(last_data)[0]
+    
+    return round(prob_success, 2), round(pred_value, 2), df['rsi'].iloc[-1]
 
 @app.get("/data")
 async def get_data():
@@ -36,86 +80,62 @@ async def get_data():
 async def recibir_resultado(res: Resultado):
     valor = res.valor
     memoria["ultimo_valor"] = valor
+    
+    # Historial para la App
     memoria["historial_visual"].insert(0, valor)
-    if len(memoria["historial_visual"]) > 100: memoria["historial_visual"].pop()
+    if len(memoria["historial_visual"]) > 15: memoria["historial_visual"].pop()
     
-    hist = memoria["historial_visual"]
-    if len(hist) < 12:
-        memoria["sugerencia"] = f"🧠 IA RECOLECTANDO ({len(hist)}/12)"
-        return {"status": "ok"}
+    # Guardar en DB para entrenamiento
+    with open(FILE_DB, 'a') as f: f.write(f"{valor}\n")
 
-    # --- 1. MOTOR DE GRAFOS (TRANSICIONES) ---
-    for i in range(len(hist) - 4):
-        nodo = tuple(cat_150(x) for x in hist[i+1:i+4])
-        resultado = cat_150(hist[i])
-        grafo[nodo][resultado] += 1
+    # Leer historial completo para la IA (hasta 150 registros)
+    try:
+        with open(FILE_DB, 'r') as f:
+            total_hist = [float(line.strip()) for line in f.readlines()][-150:]
+    except: total_hist = []
+
+    # EJECUCIÓN DEL MOTOR CUÁNTICO
+    resultado_ia = motor_inferencia_ia(total_hist)
     
-    situacion_act = tuple(cat_150(x) for x in hist[:3])
-    prob_grafo = (grafo[situacion_act]["OK"] / sum(grafo[situacion_act].values()) * 100) if sum(grafo[situacion_act].values()) > 0 else 50
+    if resultado_ia:
+        prob, val_esperado, rsi_actual = resultado_ia
+        
+        # Sincronizar Confianza
+        memoria["confianza"] = f"{round(prob)}%"
+        
+        # Lógica de Radar Rosa (Cálculo Estocástico)
+        dist_rosa = 0
+        for v in total_hist[::-1]:
+            if v >= 10.0: break
+            dist_rosa += 1
+        memoria["radar_rosa"] = f"{min(99, dist_rosa * 2)}%"
 
-    # --- 2. MOTOR DE MOMENTUM Y RSI (SALUD DEL MERCADO) ---
-    df = pd.Series(hist[:30])
-    ema5 = df.ewm(span=5).mean().iloc[0]
-    mediana = statistics.median(hist[:20])
-    
-    # RSI Simple
-    cambios = df.diff()
-    ganancia = (cambios.where(cambios > 0, 0)).rolling(10).mean().iloc[-1]
-    perdida = (-cambios.where(cambios < 0, 0)).rolling(10).mean().iloc[-1]
-    rsi = 100 - (100 / (1 + (ganancia/perdida))) if perdida > 0 else 50
+        # --- TOMA DE DECISIONES 100% IA ---
+        # Suelo de 1.50x aplicado a la sugerencia de la IA
+        t_seguro = max(1.50, round(val_esperado * 0.82, 2))
+        t_explosivo = max(t_seguro + 0.5, round(val_esperado * 1.4, 2))
 
-    # --- 3. SCORE DE CONFIANZA UNIFICADO ---
-    # Combinamos Grafos (60%) + RSI/EMA (40%)
-    score = (prob_grafo * 0.6) + (40 if rsi < 40 else 10)
-    if valor < 1.15: score += 20 # Efecto resorte
-    
-    # --- 4. FILTROS DE SEGURIDAD (ESCUDO) ---
-    # Detección de Succión (Crashes extremos seguidos)
-    succion = all(v < 1.25 for v in hist[:2])
-    # Detección de Recaudación (Media muy baja)
-    media_baja = statistics.mean(hist[:5]) < 1.35
-
-    # --- 5. CÁLCULO DE TARGETS (MÍNIMO 1.50x) ---
-    # Retiro Seguro: Basado en mediana adaptativa pero bloqueado en 1.50
-    agresividad = 1.15 if rsi < 45 else 0.95
-    t_s = round(max(1.50, mediana * 0.85 * agresividad), 2)
-    # Ganancia Alta: Basada en el EMA y potencial de rebote
-    t_e = round(max(t_s * 1.6, ema5 * 1.2), 2)
-
-    # --- 6. DETERMINACIÓN DE SALIDA FINAL ---
-    score_final = min(round(score), 99)
-    memoria["confianza"] = f"{score_final}%"
-    
-    # Radar Rosa
-    dist_r = 0
-    for v in hist:
-        if v >= 10.0: break
-        dist_r += 1
-    memoria["radar_rosa"] = f"{min(99, dist_r * 3)}%"
-
-    # Lógica de estados
-    if succion or media_baja:
-        memoria["sugerencia"] = "🛑 NO ENTRAR (SUCCIÓN)"
-        memoria["fase"] = "⚠️ RECAUDACIÓN"
-        memoria["tp_s"] = "--"
-        memoria["tp_e"] = "--"
-    elif score_final >= 80:
-        memoria["sugerencia"] = "🔥 ENTRADA FUERTE"
-        memoria["fase"] = "🚀 EXPANSIÓN"
-        memoria["tp_s"] = f"{t_s}x"
-        memoria["tp_e"] = f"{t_e}x"
-    elif score_final >= 50:
-        memoria["sugerencia"] = "⚠️ POSIBLE SEÑAL"
-        memoria["fase"] = "⚖️ ESTABLE"
-        memoria["tp_s"] = "1.50x" # Mínimo estricto
-        memoria["tp_e"] = "--"
+        if prob >= 85 and rsi_actual < 60:
+            memoria["sugerencia"] = "🔥 ENTRADA IA CONFIRMADA"
+            memoria["fase"] = "🚀 ALTA PRECISIÓN"
+            memoria["tp_s"] = f"{t_seguro}x"
+            memoria["tp_e"] = f"{t_explosivo}x"
+        elif prob >= 60:
+            memoria["sugerencia"] = "⚠️ SEÑAL MODERADA"
+            memoria["fase"] = "⚖️ ESTABLE"
+            memoria["tp_s"] = "1.50x"
+            memoria["tp_e"] = "--"
+        elif rsi_actual > 70 or all(v < 1.2 for v in total_hist[-2:]):
+            memoria["sugerencia"] = "🛑 NO ENTRAR (RIESGO)"
+            memoria["fase"] = "📊 RECAUDACIÓN"
+            memoria["tp_s"] = "--"; memoria["tp_e"] = "--"
+        else:
+            memoria["sugerencia"] = "⏳ BUSCANDO PATRÓN"
+            memoria["tp_s"] = "--"; memoria["tp_e"] = "--"
+            memoria["fase"] = "ESCANEO"
     else:
-        memoria["sugerencia"] = "⏳ BUSCANDO PATRÓN"
-        memoria["fase"] = "📊 ANALIZANDO"
-        memoria["tp_s"] = "--"
-        memoria["tp_e"] = "--"
+        memoria["sugerencia"] = f"🧠 ENTRENANDO IA ({len(total_hist)}/100)"
 
-    print(f"[{valor}x] Prob:{prob_grafo:.0f}% | RSI:{rsi:.0f} | Sug:{memoria['sugerencia']}")
     return {"status": "ok"}
 
 if __name__ == "__main__":
