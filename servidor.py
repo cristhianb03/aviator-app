@@ -6,6 +6,7 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 import statistics
 import os
+from datetime import datetime
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -13,53 +14,48 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 class Resultado(BaseModel):
     valor: float
 
-# --- CORRECCIÓN DE RUTA ABSOLUTA ---
-# Esto obliga a Python a crear el archivo en la carpeta del bot, sin importar desde dónde se ejecute
+# --- RUTA ABSOLUTA PARA EL ARCHIVO ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FILE_DB = os.path.join(BASE_DIR, 'base_datos_quantum_v100.csv')
+FILE_DB = os.path.join(BASE_DIR, 'base_datos_ia_v100.csv')
 
 memoria = {
     "ultimo_valor": 0.0,
-    "sugerencia": "⏳ IA SINCRONIZANDO",
+    "sugerencia": "🧠 IA SINCRONIZANDO",
     "confianza": "0%",
     "radar_rosa": "0%",
     "tp_s": "--",
     "tp_e": "--",
-    "fase": "ANALIZANDO",
+    "fase": "APRENDIENDO",
     "historial_visual": []
 }
 
-def motor_inferencia_ia(historial_completo):
-    if len(historial_completo) < 100:
-        return None
+def motor_ia_avanzado(hist_completo):
+    if len(hist_completo) < 50: return None
     try:
-        df = pd.DataFrame(historial_completo[::-1], columns=['valor'])
+        df = pd.DataFrame(hist_completo[::-1], columns=['valor'])
         df['target_150'] = (df['valor'].shift(-1) >= 1.50).astype(int)
         df['target_val'] = df['valor'].shift(-1)
-        for i in range(1, 6):
-            df[f'lag_{i}'] = df['valor'].shift(i)
-        df['ema_short'] = df['valor'].ewm(span=3).mean()
-        df['std_dev'] = df['valor'].rolling(window=5).std()
+        for i in range(1, 4): df[f'lag_{i}'] = df['valor'].shift(i)
         
+        # EMA y RSI (Indicadores de presión)
+        df['ema'] = df['valor'].ewm(span=5).mean()
         delta = df['valor'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=10).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=10).mean()
-        rs = gain / loss if loss > 0 else 1
-        df['rsi'] = 100 - (100 / (1 + rs))
+        gain = (delta.where(delta > 0, 0)).rolling(10).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(10).mean()
+        df['rsi'] = 100 - (100 / (1 + (gain/loss)))
         
         df = df.dropna()
-        if len(df) < 30: return None
-
-        features = ['lag_1', 'lag_2', 'lag_3', 'ema_short', 'std_dev', 'rsi']
+        features = ['lag_1', 'lag_2', 'ema', 'rsi']
         X = df[features]
         
-        clf = RandomForestClassifier(n_estimators=100, max_depth=8, random_state=42).fit(X, df['target_150'])
-        reg = RandomForestRegressor(n_estimators=100, max_depth=8, random_state=42).fit(X, df['target_val'])
+        clf = RandomForestClassifier(n_estimators=100, max_depth=10).fit(X, df['target_150'])
+        reg = RandomForestRegressor(n_estimators=100, max_depth=10).fit(X, df['target_val'])
         
-        last_data = X.tail(1)
-        return round(clf.predict_proba(last_data)[0][1] * 100, 2), round(reg.predict(last_data)[0], 2), df['rsi'].iloc[-1]
-    except:
-        return None
+        last = X.tail(1)
+        prob = clf.predict_proba(last)[0][1] * 100
+        val_pred = reg.predict(last)[0]
+        return round(prob, 2), round(val_pred, 2), df['rsi'].iloc[-1]
+    except: return None
 
 @app.get("/data")
 async def get_data():
@@ -68,59 +64,49 @@ async def get_data():
 @app.post("/nuevo-resultado")
 async def recibir_resultado(res: Resultado):
     valor = res.valor
-    
-    # Filtro de duplicados
-    if valor == memoria["ultimo_valor"]:
-        return {"status": "ignorado"}
+    if valor == memoria["ultimo_valor"]: return {"status": "skip"}
 
     memoria["ultimo_valor"] = valor
     memoria["historial_visual"].insert(0, valor)
     if len(memoria["historial_visual"]) > 15: memoria["historial_visual"].pop()
     
-    # --- PROCESO DE GUARDADO SEGURO ---
+    # FORZAR CREACIÓN DE ARCHIVO
     try:
-        with open(FILE_DB, 'a') as f: 
+        with open(FILE_DB, 'a') as f:
             f.write(f"{valor}\n")
-        print(f"💾 DATO GUARDADO EN: {FILE_DB}")
+        print(f"💾 Guardado: {valor} en {FILE_DB}")
     except Exception as e:
-        print(f"❌ ERROR AL ESCRIBIR ARCHIVO: {e}")
+        print(f"❌ Error disco: {e}")
 
-    # Leer para contar
     try:
         with open(FILE_DB, 'r') as f:
-            total_hist = [float(line.strip()) for line in f.readlines() if line.strip()]
+            total_hist = [float(line.strip()) for line in f.readlines() if line.strip()][-150:]
     except: total_hist = []
 
-    res_ia = motor_inferencia_ia(total_hist[-150:])
+    count = len(total_hist)
+    ia_res = motor_ia_avanzado(total_hist)
     
-    if res_ia:
-        prob, val_esp, rsi_act = res_ia
+    if ia_res:
+        prob, val_esp, rsi_act = ia_res
+        # LA IA DEFINE LA CONFIANZA SOLA
         memoria["confianza"] = f"{round(prob)}%"
-        
-        dist_rosa = 0
-        for v in total_hist[::-1]:
-            if v >= 10.0: break
-            dist_rosa += 1
-        memoria["radar_rosa"] = f"{min(99, dist_rosa * 2)}%"
-
-        t_s = max(1.50, round(val_esp * 0.82, 2))
+        t_s = max(1.50, round(val_esp * 0.85, 2))
         t_e = max(t_s + 0.5, round(val_esp * 1.4, 2))
 
         if prob >= 85 and rsi_act < 60:
             memoria["sugerencia"] = "🔥 ENTRADA IA CONFIRMADA"
+            memoria["tp_s"] = f"{t_s}x"; memoria["tp_e"] = f"{t_e}x"
             memoria["fase"] = "🚀 ALTA PRECISIÓN"
-            memoria["tp_s"] = f"{t_seguro}x"; memoria["tp_e"] = f"{t_explosivo}x"
         elif prob >= 60:
             memoria["sugerencia"] = "⚠️ SEÑAL MODERADA"
+            memoria["tp_s"] = "1.50x"; memoria["tp_e"] = "--"
             memoria["fase"] = "⚖️ ESTABLE"
-            memoria["tp_s"] = "1.50x"
         else:
-            memoria["sugerencia"] = "⏳ BUSCANDO PATRÓN"
-            memoria["fase"] = "📊 RECAUDACIÓN"
+            memoria["sugerencia"] = "🛑 NO ENTRAR"
             memoria["tp_s"] = "--"; memoria["tp_e"] = "--"
+            memoria["fase"] = "📊 RECAUDACIÓN"
     else:
-        memoria["sugerencia"] = f"🧠 IA APRENDIENDO ({len(total_hist)}/100)"
-        memoria["fase"] = "APRENDIENDO"
+        memoria["sugerencia"] = f"🧠 IA RECOLECTANDO ({count}/100)"
 
     return {"status": "ok"}
 
