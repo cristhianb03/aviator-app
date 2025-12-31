@@ -57,11 +57,9 @@ def motor_inferencia_ia(historial_completo):
     X = df[features]
     
     # 3. ENTRENAMIENTO DE ENSAMBLE (100% IA)
-    # Modelo A: Probabilidad de éxito
     clf = RandomForestClassifier(n_estimators=100, max_depth=8, random_state=42)
     clf.fit(X, df['target_150'])
     
-    # Modelo B: Valor esperado del próximo crash
     reg = RandomForestRegressor(n_estimators=100, max_depth=8, random_state=42)
     reg.fit(X, df['target_val'])
     
@@ -79,6 +77,12 @@ async def get_data():
 @app.post("/nuevo-resultado")
 async def recibir_resultado(res: Resultado):
     valor = res.valor
+    
+    # --- AJUSTE SOLICITADO: FILTRO ANTI-DUPLICADOS ---
+    # Si el valor que llega es igual al último procesado, salimos inmediatamente
+    if valor == memoria["ultimo_valor"]:
+        return {"status": "skipped_duplicate"}
+
     memoria["ultimo_valor"] = valor
     
     # Historial para la App
@@ -111,7 +115,6 @@ async def recibir_resultado(res: Resultado):
         memoria["radar_rosa"] = f"{min(99, dist_rosa * 2)}%"
 
         # --- TOMA DE DECISIONES 100% IA ---
-        # Suelo de 1.50x aplicado a la sugerencia de la IA
         t_seguro = max(1.50, round(val_esperado * 0.82, 2))
         t_explosivo = max(t_seguro + 0.5, round(val_esperado * 1.4, 2))
 
