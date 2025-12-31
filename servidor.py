@@ -1,11 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import statistics
+import collections
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
-import statistics
-import os
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -13,61 +12,21 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 class Resultado(BaseModel):
     valor: float
 
-FILE_DB = 'base_datos_ia_final.csv'
-
+# Estructura Maestra Sincronizada
 memoria = {
     "ultimo_valor": 0.0,
-    "sugerencia": "🧠 IA CALCULANDO",
+    "sugerencia": "⏳ ANALIZANDO",
     "confianza": "0%",
     "radar_rosa": "0%",
+    "fase": "CALIBRANDO",
     "tp_s": "--",
     "tp_e": "--",
-    "fase": "ESCANEO",
     "historial_visual": []
 }
 
-def preparar_ia_maestra():
-    try:
-        if not os.path.exists(FILE_DB): return None
-        df = pd.read_csv(FILE_DB, names=['valor'])
-        if len(df) < 100: return None 
-
-        # --- INGENIERÍA DE ATRIBUTOS AVANZADA ---
-        df['target'] = (df['valor'].shift(-1) >= 1.50).astype(int)
-        
-        # 1. Lags (Pasado inmediato)
-        df['v1'] = df['valor'].shift(1)
-        df['v2'] = df['valor'].shift(2)
-        
-        # 2. EMA (Tendencia Exponencial)
-        df['ema'] = df['valor'].ewm(span=5, adjust=False).mean()
-        
-        # 3. RSI (Fuerza Relativa - ¿Casino lleno o vacío?)
-        delta = df['valor'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=10).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=10).mean()
-        rs = gain / loss
-        df['rsi'] = 100 - (100 / (1 + rs))
-        
-        # 4. Patrón Binario (0=Azul, 1=Verde)
-        df['bin'] = (df['valor'] >= 2.0).astype(int)
-        df['pattern'] = df['bin'].shift(1).astype(str) + df['bin'].shift(2).astype(str)
-        
-        df = df.dropna()
-        if len(df) < 60: return None
-
-        # Variables que la IA va a estudiar
-        features = ['v1', 'v2', 'ema', 'rsi']
-        X = df[features]
-        y = df['target']
-        
-        # Modelo de Bosque Aleatorio Robusto
-        model = RandomForestClassifier(n_estimators=200, max_depth=12, random_state=42)
-        model.fit(X, y)
-        return model, features, df['rsi'].iloc[-1]
-    except Exception as e:
-        print(f"Error IA: {e}")
-        return None
+# Motor de Grafos para 1.50x
+grafo = collections.defaultdict(lambda: collections.Counter())
+def cat_150(v): return "OK" if v >= 1.50 else "FAIL"
 
 @app.get("/data")
 async def get_data():
@@ -78,67 +37,85 @@ async def recibir_resultado(res: Resultado):
     valor = res.valor
     memoria["ultimo_valor"] = valor
     memoria["historial_visual"].insert(0, valor)
-    if len(memoria["historial_visual"]) > 20: memoria["historial_visual"].pop()
-
-    # Guardar para el entrenamiento perpetuo
-    with open(FILE_DB, 'a') as f:
-        f.write(f"{valor}\n")
-
-    # Obtener total de datos para el contador
-    try:
-        with open(FILE_DB, 'r') as f:
-            total_data = sum(1 for line in f)
-    except: total_data = 0
-
-    ia_engine = preparar_ia_maestra()
+    if len(memoria["historial_visual"]) > 100: memoria["historial_visual"].pop()
     
-    if ia_engine and len(memoria["historial_visual"]) >= 10:
-        model, feat_names, current_rsi = ia_engine
-        try:
-            hist = memoria["historial_visual"]
-            # Preparar datos actuales
-            ema_act = statistics.mean(hist[:5])
-            # Simulación de RSI actual
-            current_x = pd.DataFrame([[hist[0], hist[1], ema_act, current_rsi]], columns=feat_names)
-            
-            # PREDICCIÓN DE PROBABILIDAD PARA 1.50x
-            prob = model.predict_proba(current_x)[0][1] * 100
-            
-            # FILTROS DE SEGURIDAD (ANTI-SUCCIÓN)
-            if valor < 1.10: prob += 15 # Bono rebote
-            if all(v < 1.25 for v in hist[:2]): prob *= 0.4 # Protección contra racha negra
-            
-            conf_f = min(round(prob), 99)
-            memoria["confianza"] = f"{conf_f}%"
+    hist = memoria["historial_visual"]
+    if len(hist) < 12:
+        memoria["sugerencia"] = f"🧠 IA RECOLECTANDO ({len(hist)}/12)"
+        return {"status": "ok"}
 
-            # CÁLCULO DE TARGETS (SUELO 1.50x)
-            mediana = statistics.median(hist[:25])
-            # El seguro se ajusta según la confianza de la IA
-            val_s = round(max(1.50, mediana * 0.94 if conf_f > 80 else 1.50), 2)
-            val_e = round(max(val_s * 2.2, 5.0 if current_rsi < 40 else 3.0), 2)
+    # --- 1. MOTOR DE GRAFOS (TRANSICIONES) ---
+    for i in range(len(hist) - 4):
+        nodo = tuple(cat_150(x) for x in hist[i+1:i+4])
+        resultado = cat_150(hist[i])
+        grafo[nodo][resultado] += 1
+    
+    situacion_act = tuple(cat_150(x) for x in hist[:3])
+    prob_grafo = (grafo[situacion_act]["OK"] / sum(grafo[situacion_act].values()) * 100) if sum(grafo[situacion_act].values()) > 0 else 50
 
-            # ESTADOS DE LA IA
-            if conf_f >= 85:
-                memoria["sugerencia"] = "🔥 ENTRADA CUÁNTICA"
-                memoria["tp_s"] = f"{val_s}x"
-                memoria["tp_e"] = f"{val_e}x"
-                memoria["fase"] = "🚀 ALTA PRECISIÓN"
-            elif conf_f >= 65:
-                memoria["sugerencia"] = "⚠️ SEÑAL MODERADA"
-                memoria["tp_s"] = "1.50x"
-                memoria["tp_e"] = "--"
-                memoria["fase"] = "⚖️ MERCADO ESTABLE"
-            else:
-                memoria["sugerencia"] = "🛑 NO ENTRAR"
-                memoria["tp_s"] = "--"; memoria["tp_e"] = "--"
-                memoria["fase"] = "📊 RECAUDACIÓN"
+    # --- 2. MOTOR DE MOMENTUM Y RSI (SALUD DEL MERCADO) ---
+    df = pd.Series(hist[:30])
+    ema5 = df.ewm(span=5).mean().iloc[0]
+    mediana = statistics.median(hist[:20])
+    
+    # RSI Simple
+    cambios = df.diff()
+    ganancia = (cambios.where(cambios > 0, 0)).rolling(10).mean().iloc[-1]
+    perdida = (-cambios.where(cambios < 0, 0)).rolling(10).mean().iloc[-1]
+    rsi = 100 - (100 / (1 + (ganancia/perdida))) if perdida > 0 else 50
 
-        except Exception as e:
-            print(f"Error Predicción: {e}")
+    # --- 3. SCORE DE CONFIANZA UNIFICADO ---
+    # Combinamos Grafos (60%) + RSI/EMA (40%)
+    score = (prob_grafo * 0.6) + (40 if rsi < 40 else 10)
+    if valor < 1.15: score += 20 # Efecto resorte
+    
+    # --- 4. FILTROS DE SEGURIDAD (ESCUDO) ---
+    # Detección de Succión (Crashes extremos seguidos)
+    succion = all(v < 1.25 for v in hist[:2])
+    # Detección de Recaudación (Media muy baja)
+    media_baja = statistics.mean(hist[:5]) < 1.35
+
+    # --- 5. CÁLCULO DE TARGETS (MÍNIMO 1.50x) ---
+    # Retiro Seguro: Basado en mediana adaptativa pero bloqueado en 1.50
+    agresividad = 1.15 if rsi < 45 else 0.95
+    t_s = round(max(1.50, mediana * 0.85 * agresividad), 2)
+    # Ganancia Alta: Basada en el EMA y potencial de rebote
+    t_e = round(max(t_s * 1.6, ema5 * 1.2), 2)
+
+    # --- 6. DETERMINACIÓN DE SALIDA FINAL ---
+    score_final = min(round(score), 99)
+    memoria["confianza"] = f"{score_final}%"
+    
+    # Radar Rosa
+    dist_r = 0
+    for v in hist:
+        if v >= 10.0: break
+        dist_r += 1
+    memoria["radar_rosa"] = f"{min(99, dist_r * 3)}%"
+
+    # Lógica de estados
+    if succion or media_baja:
+        memoria["sugerencia"] = "🛑 NO ENTRAR (SUCCIÓN)"
+        memoria["fase"] = "⚠️ RECAUDACIÓN"
+        memoria["tp_s"] = "--"
+        memoria["tp_e"] = "--"
+    elif score_final >= 80:
+        memoria["sugerencia"] = "🔥 ENTRADA FUERTE"
+        memoria["fase"] = "🚀 EXPANSIÓN"
+        memoria["tp_s"] = f"{t_s}x"
+        memoria["tp_e"] = f"{t_e}x"
+    elif score_final >= 50:
+        memoria["sugerencia"] = "⚠️ POSIBLE SEÑAL"
+        memoria["fase"] = "⚖️ ESTABLE"
+        memoria["tp_s"] = "1.50x" # Mínimo estricto
+        memoria["tp_e"] = "--"
     else:
-        memoria["sugerencia"] = f"🧠 ENTRENANDO IA ({total_data}/100)"
-        memoria["fase"] = "APRENDIENDO"
+        memoria["sugerencia"] = "⏳ BUSCANDO PATRÓN"
+        memoria["fase"] = "📊 ANALIZANDO"
+        memoria["tp_s"] = "--"
+        memoria["tp_e"] = "--"
 
+    print(f"[{valor}x] Prob:{prob_grafo:.0f}% | RSI:{rsi:.0f} | Sug:{memoria['sugerencia']}")
     return {"status": "ok"}
 
 if __name__ == "__main__":
