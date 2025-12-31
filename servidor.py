@@ -13,7 +13,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 class Resultado(BaseModel):
     valor: float
 
-FILE_DB = 'base_datos_ia_v100.csv'
+FILE_DB = 'base_datos_ia_v60.csv'
 
 memoria = {
     "ultimo_valor": 0.0,
@@ -26,15 +26,16 @@ memoria = {
     "historial_visual": []
 }
 
-def motor_inferencia_ia(hist):
-    if len(hist) < 100: return None
+def motor_ia(historial_completo):
+    if len(historial_completo) < 100: return None
     try:
-        df = pd.DataFrame(hist[::-1], columns=['valor'])
+        df = pd.DataFrame(historial_completo[::-1], columns=['valor'])
         df['target_150'] = (df['valor'].shift(-1) >= 1.50).astype(int)
         df['target_val'] = df['valor'].shift(-1)
         for i in range(1, 5): df[f'lag_{i}'] = df['valor'].shift(i)
         df['std'] = df['valor'].rolling(window=5).std()
         
+        # RSI (Fuerza Relativa)
         delta = df['valor'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=10).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=10).mean()
@@ -42,19 +43,17 @@ def motor_inferencia_ia(hist):
         df['rsi'] = 100 - (100 / (1 + rs))
         
         df = df.dropna()
-        features = ['lag_1', 'lag_2', 'lag_3', 'std', 'rsi']
-        X = df[features]
+        X = df[['lag_1', 'lag_2', 'lag_3', 'std', 'rsi']]
         
-        clf = RandomForestClassifier(n_estimators=100, max_depth=8).fit(X, df['target_150'])
-        reg = RandomForestRegressor(n_estimators=100, max_depth=8).fit(X, df['target_val'])
+        clf = RandomForestClassifier(n_estimators=100, max_depth=8, random_state=42).fit(X, df['target_150'])
+        reg = RandomForestRegressor(n_estimators=100, max_depth=8, random_state=42).fit(X, df['target_val'])
         
         last = X.tail(1)
         return round(clf.predict_proba(last)[0][1] * 100, 2), round(reg.predict(last)[0], 2), df['rsi'].iloc[-1]
     except: return None
 
 @app.get("/data")
-async def get_data():
-    return memoria
+async def get_data(): return memoria
 
 @app.post("/nuevo-resultado")
 async def recibir_resultado(res: Resultado):
@@ -73,19 +72,21 @@ async def recibir_resultado(res: Resultado):
     except: total_hist = []
 
     registros = len(total_hist)
-    res_ia = motor_inferencia_ia(total_hist)
+    res_ia = motor_ia(total_hist)
     
     if res_ia:
         prob, val_esp, rsi_act = res_ia
         memoria["confianza"] = f"{round(prob)}%"
+        
+        # Radar Rosa
         dist_r = 0
         for v in total_hist[::-1]:
             if v >= 10.0: break
             dist_r += 1
-        memoria["radar_rosa"] = f"{min(99, dist_r * 2)}%"
+        memoria["radar_rosa"] = f"{min(99, dist_r * 3)}%"
 
-        # TARGETS CON SUELO 1.50
-        t_s = max(1.50, round(val_esp * 0.85, 2))
+        # TARGETS (SUELO ESTRICTO 1.50)
+        t_s = max(1.50, round(val_esp * 0.88, 2))
         t_e = max(t_s + 0.5, round(val_esp * 1.5, 2))
 
         if prob >= 85 and rsi_act < 65:
@@ -104,7 +105,7 @@ async def recibir_resultado(res: Resultado):
         memoria["sugerencia"] = f"🧠 IA APRENDIENDO ({registros}/100)"
         memoria["fase"] = "APRENDIENDO"
 
-    print(f"🎯 RECIBIDO: {valor}x | Progreso: {registros}/100")
+    print(f"🎯 DATO: {valor}x | Progreso: {registros}/100")
     return {"status": "ok"}
 
 if __name__ == "__main__":
