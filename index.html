@@ -2,58 +2,70 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QRP - Quantitative Risk Protocol</title>
+    <title>Quantum Sentinel v605 - Risk Management</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
-        body { font-family: 'JetBrains+Mono', monospace; background: #040508; color: #a0aec0; }
-        .panel { background: #0d1117; border: 1px solid #30363d; border-radius: 12px; }
-        .status-ok { color: #238636; text-shadow: 0 0 10px rgba(35, 134, 54, 0.5); }
-        .status-warn { color: #d29922; }
-        .status-stop { color: #f85149; }
+        body { font-family: 'JetBrains+Mono', monospace; background: #020305; color: #7f8c9d; }
+        .panel { background: #0b0e14; border: 1px solid #1f2937; border-radius: 12px; transition: all 0.3s ease; }
+        .status-ok { border-color: #10b981 !important; color: #10b981; }
+        .status-warn { border-color: #f59e0b !important; color: #f59e0b; }
+        .status-stop { border-color: #ef4444 !important; color: #ef4444; }
+        .stat-card { background: #111827; border: 1px solid #1f2937; padding: 10px; border-radius: 8px; }
     </style>
 </head>
 <body class="p-4 flex flex-col items-center">
 
     <div class="w-full max-w-md">
         <!-- Header -->
-        <div class="flex justify-between items-center mb-8">
-            <h1 class="text-lg font-bold text-white tracking-tighter">PROTOCOL<span class="text-blue-500">QRP v400</span></h1>
-            <div class="text-[9px] bg-zinc-800 px-2 py-0.5 rounded border border-white/10 uppercase">Verified Logic</div>
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-xs font-bold text-white uppercase tracking-tighter">QUANTUM<span class="text-red-500">SENTINEL v605</span></h1>
+            <div class="text-[8px] bg-red-900/20 px-2 py-0.5 rounded border border-red-500/30 text-red-400 uppercase font-bold">Safe Protocol</div>
         </div>
 
-        <!-- Monitor de Telemetría -->
-        <div class="panel p-6 mb-4 text-center">
-            <p class="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Última captura de nodo</p>
-            <div id="val" class="text-7xl font-bold text-white mb-6">--</div>
+        <!-- Monitor de Riesgo -->
+        <div id="main-panel" class="panel p-6 mb-4 text-center">
+            <p class="text-[9px] uppercase tracking-widest text-gray-600 mb-2">Análisis de Nodo</p>
+            <div id="val" class="text-7xl font-bold text-white mb-6 tracking-tighter">--</div>
             
-            <div class="flex justify-between border-t border-zinc-800 pt-4 mb-4">
-                <div class="text-left">
-                    <p class="text-[8px] uppercase">Estabilidad Validada</p>
-                    <p id="prob" class="text-xl font-bold text-blue-500">0%</p>
-                </div>
-                <div class="text-right">
-                    <p class="text-[8px] uppercase">Riesgo Dinámico</p>
-                    <p id="riesgo" class="text-xl font-bold">ALTO</p>
-                </div>
+            <div id="box" class="bg-zinc-900/50 rounded-lg p-4 border border-zinc-800 mb-4">
+                <p id="sug" class="text-xs font-bold uppercase tracking-tighter">Sincronizando...</p>
             </div>
 
-            <div id="box" class="bg-zinc-900 rounded-lg p-4 border border-zinc-800">
-                <p id="sug" class="text-sm font-bold uppercase tracking-tighter">Iniciando Monitoreo</p>
+            <div class="grid grid-cols-2 gap-3">
+                <div class="stat-card">
+                    <p class="text-[7px] uppercase text-gray-500 mb-1">Estabilidad</p>
+                    <p id="prob" class="text-lg font-bold text-blue-500">0%</p>
+                </div>
+                <div class="stat-card">
+                    <p class="text-[7px] uppercase text-gray-500 mb-1">Riesgo Estimado</p>
+                    <p id="riesgo" class="text-[10px] font-bold text-gray-300">ANALIZANDO</p>
+                </div>
             </div>
         </div>
 
-        <!-- Target de Salida -->
+        <!-- Métricas de Protección (NUEVO) -->
+        <div class="grid grid-cols-2 gap-3 mb-4">
+            <div class="stat-card text-center border-l-2 border-red-500">
+                <p class="text-[7px] uppercase text-gray-500">Rondas Evitadas</p>
+                <p id="evitadas" class="text-lg font-bold text-white">0</p>
+            </div>
+            <div class="stat-card text-center border-l-2 border-blue-500">
+                <p class="text-[7px] uppercase text-gray-500">Exposición Hoy</p>
+                <p id="exposicion" class="text-lg font-bold text-white">0%</p>
+            </div>
+        </div>
+
+        <!-- Target -->
         <div class="panel p-6 text-center">
-            <p class="text-[10px] text-gray-500 uppercase mb-2">Meta de Salida Segura</p>
+            <p class="text-[9px] text-gray-600 uppercase mb-2">Target Táctico</p>
             <div id="tp_s" class="text-5xl font-bold text-white mb-2">--</div>
-            <p id="fase" class="text-[9px] uppercase tracking-widest text-gray-400">Analizando Varianza...</p>
+            <p id="fase" class="text-[9px] uppercase tracking-widest text-gray-500">Buscando Nodo</p>
         </div>
 
-        <p class="text-[8px] mt-8 text-center text-zinc-600 uppercase">
-            Sistema de apoyo a la decisión basado en convergencia histórica. 
-            No constituye garantía de resultados futuros.
+        <p class="text-[8px] mt-8 text-center text-zinc-600 leading-relaxed uppercase">
+            Protocolo de preservación de capital mediante filtrado de varianza.<br> 
+            <b>Uso no comercial sugerido: Solo asistencia de riesgo.</b>
         </p>
     </div>
 
@@ -66,29 +78,29 @@
                 const d = await r.json();
 
                 document.getElementById('val').innerText = d.ultimo_valor + 'x';
-                document.getElementById('prob').innerText = d.estabilidad_estadistica;
-                document.getElementById('riesgo').innerText = d.riesgo_ponderado;
+                document.getElementById('prob').innerText = d.estabilidad_contexto;
+                document.getElementById('riesgo').innerText = d.nivel_riesgo;
                 document.getElementById('sug').innerText = d.sugerencia;
                 document.getElementById('tp_s').innerText = d.tp_s;
                 document.getElementById('fase').innerText = d.fase;
+                document.getElementById('evitadas').innerText = d.rondas_evitadas;
+                document.getElementById('exposicion').innerText = d.exposicion_hoy;
 
+                const panel = document.getElementById('main-panel');
                 const sug = document.getElementById('sug');
-                const riesgo = document.getElementById('riesgo');
 
-                if(d.sugerencia.includes("ESTABLE")) {
-                    sug.className = "text-sm font-bold uppercase status-ok";
-                    riesgo.className = "text-xl font-bold status-ok";
-                } else if(d.sugerencia.includes("ABSTENCIÓN")) {
-                    sug.className = "text-sm font-bold uppercase status-stop";
-                    riesgo.className = "text-xl font-bold status-stop";
+                if(d.sugerencia.includes("FAVORABLE")) {
+                    panel.className = "panel p-6 mb-4 text-center status-ok";
+                } else if(d.sugerencia.includes("TÁCTICA")) {
+                    panel.className = "panel p-6 mb-4 text-center status-warn";
+                } else if(d.sugerencia.includes("🛑") || d.sugerencia.includes("❌")) {
+                    panel.className = "panel p-6 mb-4 text-center status-stop";
                 } else {
-                    sug.className = "text-sm font-bold uppercase status-warn";
-                    riesgo.className = "text-xl font-bold status-warn";
+                    panel.className = "panel p-6 mb-4 text-center";
                 }
             } catch(e) {}
         }
-        setInterval(update, 800);
+        setInterval(update, 1000);
     </script>
 </body>
 </html>
-
