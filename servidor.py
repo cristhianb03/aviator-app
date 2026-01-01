@@ -2,10 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import pandas as pd
-import numpy as np
 from sklearn.ensemble import RandomForestClassifier
-import statistics
-import collections
+from sklearn.metrics import precision_score
 import os
 
 app = FastAPI()
@@ -13,134 +11,93 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 
 class Resultado(BaseModel):
     valor: float
+    jugadores: int = 0
 
-FILE_DB = 'base_datos_ensamble_v80.csv'
+FILE_DB = 'database_qrp.csv'
 
 memoria = {
     "ultimo_valor": 0.0,
-    "sugerencia": "🧠 IA RECOLECTANDO",
-    "confianza": "0%",
-    "radar_rosa": "0%",
+    "sugerencia": "⏳ CALIBRANDO RIESGO",
+    "estabilidad_estadistica": "0%",
+    "riesgo_ponderado": "ANALIZANDO",
+    "fase": "MONITOREO",
     "tp_s": "--",
-    "tp_e": "--",
-    "fase": "APRENDIENDO",
     "historial_visual": []
 }
 
-# --- MOTOR 1: GRAFOS (TRANSICIONES) ---
-grafo = collections.defaultdict(lambda: collections.Counter())
-def cat_150(v): return "OK" if v >= 1.50 else "FAIL"
-
-def motor_inferencia_ensamble(total_hist):
-    if len(total_hist) < 100: return None
+def motor_analisis_qrp(hist_data):
+    if len(hist_data) < 100: return None
     try:
-        df = pd.DataFrame(total_hist[::-1], columns=['valor'])
-        
-        # 1. ATRIBUTOS BASE (Lo que ya teníamos)
-        df['target'] = (df['valor'].shift(-1) >= 1.50).astype(int)
-        df['v1'] = df['valor'].shift(1)
-        df['v2'] = df['valor'].shift(2)
-        
-        # 2. ATRIBUTOS RSI/EMA
-        df['ema'] = df['valor'].ewm(span=5).mean()
-        delta = df['valor'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(10).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(10).mean()
-        rs = gain / loss if loss.iloc[-1] > 0 else 1
-        df['rsi'] = 100 - (100 / (1 + rs))
-        
-        # 3. ATRIBUTO DE GRAFOS (Señal combinada)
-        # Entrenamos un sub-grafo interno para darle una puntuación a la IA
-        graph_scores = []
-        for i in range(len(df)-4):
-            nodo = tuple(cat_150(x) for x in df['valor'].iloc[i+1:i+4])
-            res_sig = cat_150(df['valor'].iloc[i])
-            grafo[nodo][res_sig] += 1
-        
+        df = pd.DataFrame(hist_data, columns=['valor', 'jugadores'])
+        df['target_exit'] = (df['valor'].shift(-1) >= 1.50).astype(int)
+        df['volatilidad'] = df['valor'].rolling(5).std()
+        df['momentum'] = df['valor'].ewm(span=5).mean()
         df = df.dropna()
-        X = df[['v1', 'v2', 'ema', 'rsi']]
-        y = df['target']
         
-        # ENTRENAMIENTO DEL BOSQUE ALEATORIO
-        model = RandomForestClassifier(n_estimators=150, max_depth=10, random_state=42)
-        model.fit(X, y)
+        features = ['valor', 'jugadores', 'volatilidad', 'momentum']
+        split = int(len(df) * 0.75)
+        train, test = df.iloc[:split], df.iloc[split:]
         
-        # Predicción actual
-        current_node = tuple(cat_150(x) for x in total_hist[:3])
-        prob_graph = (grafo[current_node]["OK"] / sum(grafo[current_node].values())) if sum(grafo[current_node].values()) > 0 else 0.5
+        # Modelo conservador nivel enterprise
+        model = RandomForestClassifier(n_estimators=50, max_depth=3, random_state=42)
+        model.fit(train[features], train['target_exit'])
         
-        input_now = pd.DataFrame([[total_hist[0], total_hist[1], df['ema'].iloc[-1], df['rsi'].iloc[-1]]], 
-                                 columns=['v1', 'v2', 'ema', 'rsi'])
+        # Validación de Calidad (Precisión)
+        preds = model.predict(test[features])
+        precision_v = precision_score(test['target_exit'], preds, zero_division=0)
+        baseline = test['target_exit'].mean()
         
-        prob_ia = model.predict_proba(input_now)[0][1]
+        # Inferencia de clúster actual
+        current_x = df.tail(1)[features]
+        indice_estabilidad = model.predict_proba(current_x)[0][1]
         
-        # Fusión Final: 50% ML + 50% Grafos
-        prob_final = (prob_ia * 0.5) + (prob_graph * 0.5)
-        
-        return round(prob_final * 100, 2), df['rsi'].iloc[-1], statistics.median(total_hist[:20])
-    except Exception as e:
-        print(f"Error IA: {e}")
-        return None
+        return round(indice_estabilidad * 100, 2), round(precision_v * 100, 2), round(baseline * 100, 2)
+    except: return None
 
 @app.get("/data")
 async def get_data(): return memoria
 
 @app.post("/nuevo-resultado")
 async def recibir_resultado(res: Resultado):
-    v = res.valor
+    v, j = res.valor, res.jugadores
     if v == memoria["ultimo_valor"]: return {"status": "skip"}
 
     memoria["ultimo_valor"] = v
     memoria["historial_visual"].insert(0, v)
     if len(memoria["historial_visual"]) > 15: memoria["historial_visual"].pop()
     
-    with open(FILE_DB, 'a') as f: f.write(f"{v}\n")
+    with open(FILE_DB, 'a') as f: f.write(f"{v},{j}\n")
 
     try:
-        with open(FILE_DB, 'r') as f:
-            total_hist = [float(line.strip()) for line in f.readlines() if line.strip()][-250:]
+        db = pd.read_csv(FILE_DB, names=['valor', 'jugadores'])
+        total_hist = db.tail(300).values.tolist()
     except: total_hist = []
 
-    count = len(total_hist)
-    res_ia = motor_inferencia_ensamble(total_hist)
+    res_qrp = motor_analisis_qrp(total_hist)
     
-    if count >= 100 and res_ia:
-        prob, rsi_act, mediana = res_ia
+    if res_qrp:
+        ind_est, prec_val, baseline = res_qrp
+        memoria["estabilidad_estadistica"] = f"{prec_val}%"
         
-        # --- FILTROS DE SEGURIDAD EXTREMA ---
-        succion = all(x < 1.30 for x in total_hist[-2:])
-        if succion: prob *= 0.2 # Hundimos la confianza si hay succión
-        
-        memoria["confianza"] = f"{round(prob)}%"
-        
-        # CÁLCULO DE TARGETS (SUELO ESTRICTO 1.50x)
-        # Aplicamos un buffer de seguridad del 10% (0.90) para asertividad
-        val_s = round(max(1.50, mediana * 0.90), 2)
-        val_e = round(max(val_s * 2.2, mediana * 2.0), 2)
-
-        # Lógica de Recomendación
-        if prob >= 88 and not succion:
-            memoria["sugerencia"] = "🔥 ENTRADA IA CONFIRMADA"
-            memoria["tp_s"], memoria["tp_e"] = f"{val_s}x", f"{val_e}x"
-            memoria["fase"] = "🚀 ALTA PRECISIÓN"
-        elif prob >= 65 and not succion:
-            memoria["sugerencia"] = "⚠️ SEÑAL MODERADA"
-            memoria["tp_s"] = "1.50x"
-            memoria["tp_e"] = "--"
-            memoria["fase"] = "⚖️ ESTABLE"
+        # Criterio de Ventaja Estadística: Precisión > Baseline + 5%
+        if prec_val > (baseline + 5):
+            if ind_est > 75:
+                memoria["sugerencia"] = "✅ CONTEXTO ESTABLE"
+                memoria["riesgo_ponderado"] = "BAJO (VALIDADO)"
+                memoria["tp_s"] = "1.50x"
+                memoria["fase"] = "OPTIMIZACIÓN"
+            else:
+                memoria["sugerencia"] = "⏳ ESPERAR CONVERGENCIA"
+                memoria["riesgo_ponderado"] = "MEDIO"
+                memoria["tp_s"] = "--"
+                memoria["fase"] = "ZONA NEUTRAL"
         else:
-            memoria["sugerencia"] = "🛑 NO ENTRAR (RIESGO)"
-            memoria["tp_s"], memoria["tp_e"] = "--", "--"
-            memoria["fase"] = "📊 RECAUDACIÓN"
+            memoria["sugerencia"] = "🛑 ABSTENCIÓN TÉCNICA"
+            memoria["riesgo_ponderado"] = "MÁXIMO (CAOS)"
+            memoria["tp_s"] = "--"
+            memoria["fase"] = "SIN VENTAJA"
     else:
-        memoria["sugerencia"] = f"🧠 IA APRENDIENDO ({count}/100)"
-
-    # Radar Rosa por Déficit
-    dist_r = 0
-    for x in total_hist[::-1]:
-        if x >= 10.0: break
-        dist_r += 1
-    memoria["radar_rosa"] = f"{min(99, dist_r * 2)}%"
+        memoria["sugerencia"] = f"🧠 CALIBRANDO ({len(total_hist)}/120)"
 
     return {"status": "ok"}
 
