@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import pandas as pd
+import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import precision_score
 import os
@@ -15,18 +16,31 @@ class Resultado(BaseModel):
 
 FILE_DB = 'database_qrp.csv'
 
+# Estructura de memoria
 memoria = {
     "ultimo_valor": 0.0,
-    "sugerencia": "⏳ CALIBRANDO RIESGO",
+    "sugerencia": "⏳ ANALIZANDO",
     "estabilidad_estadistica": "0%",
-    "riesgo_ponderado": "ANALIZANDO",
-    "fase": "MONITOREO",
+    "riesgo_ponderado": "ALTO",
+    "fase": "CARGANDO",
     "tp_s": "--",
     "historial_visual": []
 }
 
+# --- NUEVA FUNCIÓN: CARGAR MEMORIA DESDE DISCO ---
+def cargar_historial_inicial():
+    if os.path.exists(FILE_DB):
+        try:
+            df = pd.read_csv(FILE_DB, names=['valor', 'jugadores'])
+            return df.tail(15).valor.tolist()
+        except: return []
+    return []
+
+memoria["historial_visual"] = cargar_historial_inicial()
+
 def motor_analisis_qrp(hist_data):
-    if len(hist_data) < 100: return None
+    # Reducimos el mínimo a 80 para mayor agilidad
+    if len(hist_data) < 80: return None
     try:
         df = pd.DataFrame(hist_data, columns=['valor', 'jugadores'])
         df['target_exit'] = (df['valor'].shift(-1) >= 1.50).astype(int)
@@ -35,19 +49,16 @@ def motor_analisis_qrp(hist_data):
         df = df.dropna()
         
         features = ['valor', 'jugadores', 'volatilidad', 'momentum']
-        split = int(len(df) * 0.75)
+        split = int(len(df) * 0.70)
         train, test = df.iloc[:split], df.iloc[split:]
         
-        # Modelo conservador nivel enterprise
         model = RandomForestClassifier(n_estimators=50, max_depth=3, random_state=42)
         model.fit(train[features], train['target_exit'])
         
-        # Validación de Calidad (Precisión)
         preds = model.predict(test[features])
         precision_v = precision_score(test['target_exit'], preds, zero_division=0)
         baseline = test['target_exit'].mean()
         
-        # Inferencia de clúster actual
         current_x = df.tail(1)[features]
         indice_estabilidad = model.predict_proba(current_x)[0][1]
         
@@ -68,6 +79,7 @@ async def recibir_resultado(res: Resultado):
     
     with open(FILE_DB, 'a') as f: f.write(f"{v},{j}\n")
 
+    # Leer historial extendido del archivo para entrenar
     try:
         db = pd.read_csv(FILE_DB, names=['valor', 'jugadores'])
         total_hist = db.tail(300).values.tolist()
@@ -79,26 +91,27 @@ async def recibir_resultado(res: Resultado):
         ind_est, prec_val, baseline = res_qrp
         memoria["estabilidad_estadistica"] = f"{prec_val}%"
         
-        # Criterio de Ventaja Estadística: Precisión > Baseline + 5%
-        if prec_val > (baseline + 5):
-            if ind_est > 75:
+        # Reducimos el filtro de ventaja a +2% sobre el azar
+        if prec_val > (baseline + 2):
+            if ind_est > 70:
                 memoria["sugerencia"] = "✅ CONTEXTO ESTABLE"
                 memoria["riesgo_ponderado"] = "BAJO (VALIDADO)"
                 memoria["tp_s"] = "1.50x"
-                memoria["fase"] = "OPTIMIZACIÓN"
+                memoria["fase"] = "VENTAJA ACTIVA"
             else:
-                memoria["sugerencia"] = "⏳ ESPERAR CONVERGENCIA"
+                memoria["sugerencia"] = "⏳ ESPERAR ZONA"
                 memoria["riesgo_ponderado"] = "MEDIO"
                 memoria["tp_s"] = "--"
-                memoria["fase"] = "ZONA NEUTRAL"
+                memoria["fase"] = "NEUTRAL"
         else:
-            memoria["sugerencia"] = "🛑 ABSTENCIÓN TÉCNICA"
+            memoria["sugerencia"] = "🛑 ABSTENCIÓN"
             memoria["riesgo_ponderado"] = "MÁXIMO (CAOS)"
             memoria["tp_s"] = "--"
-            memoria["fase"] = "SIN VENTAJA"
+            memoria["fase"] = f"PRECISIÓN BAJA ({prec_val}%)"
     else:
-        memoria["sugerencia"] = f"🧠 CALIBRANDO ({len(total_hist)}/120)"
+        memoria["sugerencia"] = f"🧠 CALIBRANDO ({len(total_hist)}/80)"
 
+    print(f"🎯 [{v}x] Fase: {memoria['fase']} | Precision: {memoria['estabilidad_estadistica']}")
     return {"status": "ok"}
 
 if __name__ == "__main__":
