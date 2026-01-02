@@ -2,93 +2,87 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Quantum Sentinel v605 - Sincronizado</title>
+    <title>QRP v800 - Exceptional Node Detection</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
-        body { font-family: 'JetBrains+Mono', monospace; background: #020305; color: #7f8c9d; }
-        .panel { background: #0b0e14; border: 1px solid #1f2937; border-radius: 12px; transition: all 0.3s ease; }
-        .status-ok { border-color: #10b981 !important; color: #10b981; }
-        .status-warn { border-color: #f59e0b !important; color: #f59e0b; }
-        .status-stop { border-color: #ef4444 !important; color: #ef4444; }
-        .stat-card { background: #111827; border: 1px solid #1f2937; padding: 10px; border-radius: 8px; }
+        body { font-family: 'JetBrains+Mono', monospace; background: #010204; color: #64748b; }
+        .panel { background: #0a0c10; border: 1px solid #1e293b; border-radius: 12px; transition: all 0.4s ease; }
+        .status-ex { color: #22d3ee; border-color: #22d3ee !important; box-shadow: 0 0 20px rgba(34, 211, 238, 0.2); }
+        .status-ok { color: #10b981; border-color: #10b981 !important; }
+        .status-warn { color: #f59e0b; border-color: #f59e0b !important; }
+        .status-stop { color: #ef4444; border-color: #ef4444 !important; }
+        .stat-card { background: #0f172a; border: 1px solid #1e293b; padding: 12px; border-radius: 8px; }
     </style>
 </head>
 <body class="p-4 flex flex-col items-center">
 
     <div class="w-full max-w-md">
-        <header class="flex justify-between items-center mb-6">
-            <h1 class="text-xs font-bold text-white uppercase tracking-tighter">QUANTUM<span class="text-red-500">SENTINEL v605</span></h1>
-            <div class="text-[8px] bg-red-900/20 px-2 py-0.5 rounded border border-red-500/30 text-red-400 font-bold">Safe Protocol</div>
-        </header>
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-xs font-bold text-white uppercase tracking-tighter">SENTINEL<span class="text-red-500">QRP v800</span></h1>
+            <div class="text-[8px] bg-zinc-900 px-2 py-0.5 rounded border border-white/5 text-gray-500 font-bold tracking-widest">Exceptional Tracking</div>
+        </div>
 
         <!-- Monitor -->
         <div id="main-panel" class="panel p-6 mb-4 text-center">
-            <p class="text-[9px] uppercase tracking-widest text-gray-600 mb-2">Análisis de Nodo</p>
-            <div id="val" class="text-7xl font-bold text-white mb-6">--</div>
+            <p class="text-[9px] uppercase tracking-widest text-gray-500 mb-2">Telemetría de Convergencia</p>
+            <div id="val" class="text-7xl font-bold text-white mb-6 tracking-tighter">--</div>
             
-            <div id="box" class="bg-zinc-900/50 rounded-lg p-4 border border-zinc-800 mb-4">
+            <div id="box" class="bg-zinc-950 rounded-lg p-4 border border-zinc-900 mb-4">
                 <p id="sug" class="text-xs font-bold uppercase tracking-tighter">Sincronizando...</p>
             </div>
 
             <div class="grid grid-cols-2 gap-3">
                 <div class="stat-card">
-                    <p class="text-[7px] uppercase text-gray-500 mb-1">Estabilidad</p>
-                    <p id="prob" class="text-lg font-bold text-blue-400">0%</p>
+                    <p class="text-[7px] uppercase text-gray-500 mb-1">Selectividad</p>
+                    <p id="select" class="text-sm font-bold text-white">Baja</p>
                 </div>
                 <div class="stat-card">
                     <p class="text-[7px] uppercase text-gray-500 mb-1">Riesgo Estimado</p>
-                    <p id="riesgo" class="text-[10px] font-bold text-gray-300">ANALIZANDO</p>
+                    <p id="riesgo" class="text-[10px] font-bold">ANALIZANDO</p>
                 </div>
             </div>
         </div>
 
-        <!-- Métricas de Protección -->
-        <div class="grid grid-cols-2 gap-3 mb-4">
-            <div class="stat-card text-center border-l-2 border-red-500">
-                <p class="text-[7px] uppercase text-gray-500">Rondas Evitadas</p>
-                <p id="evitadas" class="text-lg font-bold text-white">0</p>
-            </div>
-            <div class="stat-card text-center border-l-2 border-blue-500">
-                <p class="text-[7px] uppercase text-gray-500">Exposición Hoy</p>
-                <p id="exposicion" class="text-lg font-bold text-white">0%</p>
-            </div>
+        <!-- Target Escalonado -->
+        <div class="panel p-6 text-center">
+            <p class="text-[9px] text-gray-500 uppercase mb-2">Target Táctico Sugerido</p>
+            <div id="tp_s" class="text-5xl font-bold text-white mb-2">--</div>
+            <p id="fase" class="text-[9px] uppercase tracking-widest text-gray-500">Analizando Historial</p>
         </div>
 
-        <!-- Target -->
-        <div class="panel p-6 text-center">
-            <p class="text-[9px] text-gray-600 uppercase mb-2">Target Táctico</p>
-            <div id="tp_s" class="text-5xl font-bold text-white mb-2">--</div>
-            <p id="fase" class="text-[9px] uppercase tracking-widest text-gray-500">Buscando Nodo</p>
-        </div>
+        <p class="text-[8px] mt-10 text-center text-zinc-600 leading-relaxed uppercase">
+            Los targets elevados se habilitan solo bajo estabilidad histórica excepcional. <br>
+            <b>Uso asistido: No delegue decisiones financieras al software.</b>
+        </p>
     </div>
 
     <script>
-        // REEMPLAZAR CON TU URL DE NGROK
-        const API = "https://cordlike-dylan-unstrenuously.ngrok-free.dev/data";
+        const API = "https://TU-URL-DE-NGROK.ngrok-free.dev/data";
 
         async function update() {
             try {
                 const r = await fetch(API, { headers: { "ngrok-skip-browser-warning": "69420" } });
                 const d = await r.json();
 
-                // Mapeo manual corregido para evitar "undefined"
                 document.getElementById('val').innerText = d.ultimo_valor + 'x';
-                document.getElementById('prob').innerText = d.estabilidad_contexto;
+                document.getElementById('select').innerText = d.selectivity; // Ajustado abajo
                 document.getElementById('riesgo').innerText = d.nivel_riesgo;
                 document.getElementById('sug').innerText = d.sugerencia;
                 document.getElementById('tp_s').innerText = d.tp_s;
                 document.getElementById('fase').innerText = d.fase;
-                document.getElementById('evitadas').innerText = d.rondas_evitadas;
-                document.getElementById('exposicion').innerText = d.exposicion_hoy;
 
                 const panel = document.getElementById('main-panel');
-                if(d.sugerencia.includes("FAVORABLE")) panel.className = "panel p-6 mb-4 text-center status-ok";
+                const sug = document.getElementById('sug');
+
+                if(d.sugerencia.includes("EXCEPCIONAL")) panel.className = "panel p-6 mb-4 text-center status-ex";
+                else if(d.sugerencia.includes("FAVORABLE")) panel.className = "panel p-6 mb-4 text-center status-ok";
                 else if(d.sugerencia.includes("TÁCTICA")) panel.className = "panel p-6 mb-4 text-center status-warn";
                 else if(d.sugerencia.includes("🛑") || d.sugerencia.includes("❌")) panel.className = "panel p-6 mb-4 text-center status-stop";
                 else panel.className = "panel p-6 mb-4 text-center";
 
-            } catch(e) { console.log("Error de conexión..."); }
+            } catch(e) {}
         }
         setInterval(update, 1000);
     </script>
