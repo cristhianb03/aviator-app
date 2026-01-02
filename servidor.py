@@ -15,36 +15,35 @@ class Resultado(BaseModel):
     valor: float
     jugadores: int = 0
 
-FILE_DB = 'database_qrp_v605.csv'
+FILE_DB = 'database_qrp_v800.csv'
 csv_lock = threading.Lock()
 
-# Memoria Maestra V605 - Nombres sincronizados con el HTML
 memoria = {
     "ultimo_valor": 0.0,
-    "sugerencia": "⏳ CALIBRANDO SENTINEL",
+    "sugerencia": "⏳ CALIBRANDO PROTOCOLO",
     "estabilidad_contexto": "0%",
     "nivel_riesgo": "ANALIZANDO",
     "tp_s": "--",
     "fase": "MONITOREO",
     "rondas_evitadas": 0,
-    "exposicion_hoy": "0%",
     "rondas_totales": 0,
     "contador_fallos": 0,
     "bloqueo_rondas": 0,
+    "selectividad": "MEDIA",
     "historial_visual": []
 }
 
-def motor_sentinel_qrp(hist_data):
+def motor_except_qrp(hist_data):
     if len(hist_data) < 100: return None
     try:
         df = pd.DataFrame(hist_data, columns=['valor', 'jugadores'])
+        # Target base de entrenamiento: 1.50x
         df['target_exit'] = (df['valor'].shift(-1) >= 1.50).astype(int)
         df['std_5'] = df['valor'].rolling(5).std()
         df['ema_5'] = df['valor'].ewm(span=5).mean()
-        df['vol_change'] = df['jugadores'].diff()
-        
         df = df.dropna()
-        features = ['valor', 'jugadores', 'std_5', 'ema_5', 'vol_change']
+        
+        features = ['valor', 'jugadores', 'std_5', 'ema_5']
         split = int(len(df) * 0.75)
         train, test = df.iloc[:split], df.iloc[split:]
         
@@ -69,18 +68,15 @@ async def recibir_resultado(res: Resultado):
     v, j = res.valor, res.jugadores
     if v == memoria["ultimo_valor"]: return {"status": "skip"}
 
-    # Actualización de historial
     memoria["ultimo_valor"] = v
     memoria["rondas_totales"] += 1
-    
-    # CORREGIDO: Sintaxis de inserción de historial
     memoria["historial_visual"].insert(0, v)
     if len(memoria["historial_visual"]) > 15: memoria["historial_visual"].pop()
     
-    # Gestión de Bloqueos por fallo
+    # Gestión de Bloqueos
     if memoria["bloqueo_rondas"] > 0: memoria["bloqueo_rondas"] -= 1
     if memoria["tp_s"] != "--":
-        if v < 1.50:
+        if v < float(memoria["tp_s"].split('x')[0].split('-')[0]):
             memoria["contador_fallos"] += 1
             if memoria["contador_fallos"] >= 2: memoria["bloqueo_rondas"] = 3
         else: memoria["contador_fallos"] = 0 
@@ -93,46 +89,52 @@ async def recibir_resultado(res: Resultado):
         total_hist = db.tail(350).values.tolist()
     except: total_hist = []
 
-    res_ia = motor_sentinel_qrp(total_hist)
+    res_ia = motor_except_qrp(total_hist)
     
     if res_ia:
         ind_est, prec_val, baseline, std_act = res_ia
         ventaja_ponderada = (prec_val - baseline) * (ind_est / 100)
         memoria["estabilidad_contexto"] = f"{round(ind_est)}%"
 
-        # --- LÓGICA DE ESTADOS V605 ---
+        # --- LÓGICA DE TP ESCALONADO POR CONTEXTO ---
+
+        # 1. BLOQUEO / PAUSA
         if memoria["bloqueo_rondas"] > 0:
             memoria["sugerencia"] = "🛑 PAUSA DE SEGURIDAD"
-            memoria["nivel_riesgo"] = "CRÍTICO"
-            memoria["tp_s"] = "--"; memoria["fase"] = "DRAWDOWN CONTROL"
-            memoria["rondas_evitadas"] += 1
-        elif ind_est < 45 or std_act > 5.0:
-            memoria["sugerencia"] = "❌ CONTEXTO TÓXICO"
-            memoria["nivel_riesgo"] = "EXTREMO"
-            memoria["tp_s"] = "--"; memoria["fase"] = "EVITAR EXPOSICIÓN"
-            memoria["rondas_evitadas"] += 1
-        elif ind_est > 62 and ventaja_ponderada > 1.0 and prec_val > baseline:
-            if memoria["fase"] == "VENTAJA VALIDADA" and ind_est < 68:
-                memoria["sugerencia"] = "⚠️ VENTANA TÁCTICA CORTA"
-                memoria["nivel_riesgo"] = "MEDIO (ENFRIAMIENTO)"
-                memoria["tp_s"] = "1.25x"; memoria["fase"] = "CONTROL DE EUFORIA"
+            memoria["tp_s"] = "--"; memoria["nivel_riesgo"] = "MÁXIMO"; memoria["rondas_evitadas"] += 1
+
+        # 2. CONTEXTO EXCEPCIONAL (EL "UNICORNIO")
+        elif ind_est >= 72 and ventaja_ponderada > 2.5 and std_act < 1.2:
+            memoria["sugerencia"] = "💎 CONTEXTO EXCEPCIONAL"
+            memoria["tp_s"] = "1.80x - 2.00x"
+            memoria["nivel_riesgo"] = "MÍNIMO (ESTADÍSTICO)"
+            memoria["fase"] = "ALTA SELECTIVIDAD"; memoria["selectividad"] = "EXTREMA"
+
+        # 3. CONTEXTO FAVORABLE
+        elif ind_est > 62 and ventaja_ponderada > 1.2:
+            # Enfriamiento post-éxito
+            if "VENTAJA VALIDADA" in memoria["fase"] and ind_est < 68:
+                memoria["sugerencia"] = "⚠️ VENTANA TÁCTICA"
+                memoria["tp_s"] = "1.25x - 1.35x"
+                memoria["fase"] = "CONTROL DE EUFORIA"
             else:
                 memoria["sugerencia"] = "✅ CONTEXTO FAVORABLE"
+                memoria["tp_s"] = "1.45x - 1.55x"
                 memoria["nivel_riesgo"] = "BAJO"
-                memoria["tp_s"] = "1.50x"; memoria["fase"] = "VENTAJA VALIDADA"
-        elif 50 <= ind_est <= 62:
-            memoria["sugerencia"] = "⚠️ VENTANA TÁCTICA CORTA"
+                memoria["fase"] = "VENTAJA VALIDADA"; memoria["selectividad"] = "ALTA"
+
+        # 4. VENTANA TÁCTICA
+        elif 55 <= ind_est <= 62 and ventaja_ponderada > 0.2:
+            memoria["sugerencia"] = "⚠️ VENTANA TÁCTICA"
+            memoria["tp_s"] = "1.20x - 1.30x"
             memoria["nivel_riesgo"] = "MODERADO"
-            memoria["tp_s"] = "1.20x - 1.30x"; memoria["fase"] = "DISCRECIONAL"
+            memoria["fase"] = "ZONA DISCRECIONAL"; memoria["selectividad"] = "MEDIA"
+
+        # 5. ABSTENCIÓN
         else:
             memoria["sugerencia"] = "⏳ ESPERANDO ESTABILIDAD"
-            memoria["nivel_riesgo"] = "ELEVADO"
-            memoria["tp_s"] = "--"; memoria["fase"] = "MONITOREO"
-            memoria["rondas_evitadas"] += 1
-
-        r_totales = max(1, memoria["rondas_totales"])
-        calc_expo = ((r_totales - memoria["rondas_evitadas"]) / r_totales) * 100
-        memoria["exposicion_hoy"] = f"{round(calc_expo)}%"
+            memoria["tp_s"] = "--"; memoria["nivel_riesgo"] = "ELEVADO"
+            memoria["fase"] = "MONITOREO"; memoria["rondas_evitadas"] += 1
 
     return {"status": "ok"}
 
