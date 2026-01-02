@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>QRP v800 - Exceptional Node Detection</title>
+    <title>QRP v801 - Apollo Stable</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
@@ -18,11 +18,10 @@
 <body class="p-4 flex flex-col items-center">
 
     <div class="w-full max-w-md">
-        <!-- Header -->
-        <div class="flex justify-between items-center mb-6">
-            <h1 class="text-xs font-bold text-white uppercase tracking-tighter">SENTINEL<span class="text-red-500">QRP v800</span></h1>
-            <div class="text-[8px] bg-zinc-900 px-2 py-0.5 rounded border border-white/5 text-gray-500 font-bold tracking-widest">Exceptional Tracking</div>
-        </div>
+        <header class="flex justify-between items-center mb-6">
+            <h1 class="text-xs font-bold text-white uppercase tracking-tighter">SENTINEL<span class="text-red-500">QRP v801</span></h1>
+            <div class="text-[8px] bg-zinc-900 px-2 py-0.5 rounded border border-white/5 text-gray-500 font-bold tracking-widest uppercase">Stable Protocol</div>
+        </header>
 
         <!-- Monitor -->
         <div id="main-panel" class="panel p-6 mb-4 text-center">
@@ -36,7 +35,7 @@
             <div class="grid grid-cols-2 gap-3">
                 <div class="stat-card">
                     <p class="text-[7px] uppercase text-gray-500 mb-1">Selectividad</p>
-                    <p id="select" class="text-sm font-bold text-white">Baja</p>
+                    <p id="select" class="text-sm font-bold text-white">---</p>
                 </div>
                 <div class="stat-card">
                     <p class="text-[7px] uppercase text-gray-500 mb-1">Riesgo Estimado</p>
@@ -45,44 +44,41 @@
             </div>
         </div>
 
-        <!-- Target Escalonado -->
+        <!-- Target -->
         <div class="panel p-6 text-center">
             <p class="text-[9px] text-gray-500 uppercase mb-2">Target Táctico Sugerido</p>
             <div id="tp_s" class="text-5xl font-bold text-white mb-2">--</div>
-            <p id="fase" class="text-[9px] uppercase tracking-widest text-gray-500">Analizando Historial</p>
+            <p id="fase" class="text-[9px] uppercase tracking-widest text-gray-400">Escaneando...</p>
         </div>
 
-        <p class="text-[8px] mt-10 text-center text-zinc-600 leading-relaxed uppercase">
-            Los targets elevados se habilitan solo bajo estabilidad histórica excepcional. <br>
-            <b>Uso asistido: No delegue decisiones financieras al software.</b>
+        <p class="text-[8px] mt-10 text-center text-zinc-600 uppercase">
+            Protocolo de gestión de riesgo basado en varianza histórica.
         </p>
     </div>
 
     <script>
-        const API = "https://TU-URL-DE-NGROK.ngrok-free.dev/data";
+        const API = "https://cordlike-dylan-unstrenuously.ngrok-free.dev/data";
 
         async function update() {
             try {
                 const r = await fetch(API, { headers: { "ngrok-skip-browser-warning": "69420" } });
                 const d = await r.json();
 
-                document.getElementById('val').innerText = d.ultimo_valor + 'x';
-                document.getElementById('select').innerText = d.selectivity; // Ajustado abajo
-                document.getElementById('riesgo').innerText = d.nivel_riesgo;
-                document.getElementById('sug').innerText = d.sugerencia;
-                document.getElementById('tp_s').innerText = d.tp_s;
-                document.getElementById('fase').innerText = d.fase;
+                document.getElementById('val').innerText = (d.ultimo_valor || 0) + 'x';
+                document.getElementById('select').innerText = d.selectivity || "BAJA";
+                document.getElementById('riesgo').innerText = d.nivel_riesgo || "ALTO";
+                document.getElementById('sug').innerText = d.sugerencia || "MONITOREANDO";
+                document.getElementById('tp_s').innerText = d.tp_s || "--";
+                document.getElementById('fase').innerText = d.fase || "BUSCANDO NODO";
 
                 const panel = document.getElementById('main-panel');
-                const sug = document.getElementById('sug');
-
                 if(d.sugerencia.includes("EXCEPCIONAL")) panel.className = "panel p-6 mb-4 text-center status-ex";
                 else if(d.sugerencia.includes("FAVORABLE")) panel.className = "panel p-6 mb-4 text-center status-ok";
                 else if(d.sugerencia.includes("TÁCTICA")) panel.className = "panel p-6 mb-4 text-center status-warn";
-                else if(d.sugerencia.includes("🛑") || d.sugerencia.includes("❌")) panel.className = "panel p-6 mb-4 text-center status-stop";
+                else if(d.sugerencia.includes("ABSTENCIÓN") || d.sugerencia.includes("🛑")) panel.className = "panel p-6 mb-4 text-center status-stop";
                 else panel.className = "panel p-6 mb-4 text-center";
 
-            } catch(e) {}
+            } catch(e) { console.log("Reconectando..."); }
         }
         setInterval(update, 1000);
     </script>
