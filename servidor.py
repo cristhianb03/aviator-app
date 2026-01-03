@@ -4,10 +4,10 @@ from pydantic import BaseModel
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import precision_score
 import os
 import threading
 import statistics
-from datetime import datetime
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -16,37 +16,42 @@ class Resultado(BaseModel):
     valor: float
     jugadores: int = 0
 
-FILE_DB = 'database_sentinel_v76.csv'
+FILE_DB = 'database_v75_master.csv'
 csv_lock = threading.Lock()
 
-# Memoria Maestra V76
+# MEMORIA MAESTRA SINCRONIZADA
 memoria = {
     "ultimo_valor": 0.0,
     "sugerencia": "⏳ CALIBRANDO",
-    "fase": "MONITOREO",
-    "tp_seguro": "--",
-    "tp_crecimiento": "--",
-    "trades_hoy": 0,
-    "max_trades": 30,
+    "confianza": "0%",
+    "tp_s": "--", # Base 1.20x
+    "tp_e": "--", # Optimización 1.50x
+    "fase": "INICIO",
     "wins_hoy": 0,
-    "fecha_actual": datetime.now().strftime("%Y-%m-%d"),
+    "trades_hoy": 0,
+    "bloqueo_rondas": 0,
     "historial_visual": []
 }
 
-def motor_ia_sentinel(hist):
+def motor_ia_flow(hist):
     if len(hist) < 80: return None
     try:
         df = pd.DataFrame(hist[::-1], columns=['valor'])
-        df['target'] = (df['valor'].shift(-1) >= 1.25).astype(int)
+        # Target estratégico 1.30x para validar ambas salidas
+        df['target'] = (df['valor'].shift(-1) >= 1.30).astype(int)
         df['v1'] = df['valor'].shift(1)
         df['v2'] = df['valor'].shift(2)
         df['std'] = df['valor'].rolling(5).std()
         df = df.dropna()
+        
         X = df[['v1', 'v2', 'std']]
         model = RandomForestClassifier(n_estimators=50, max_depth=3, random_state=42).fit(X, df['target'])
+        
         std_act = statistics.stdev(hist[:5])
         prob = model.predict_proba(np.array([[hist[0], hist[1], std_act]]))[0][1]
-        return round(prob * 100, 2), round(std_act, 2)
+        
+        baseline = df['target'].mean() * 100
+        return round(prob * 100, 2), round(std_act, 2), round(baseline, 2)
     except: return None
 
 @app.get("/data")
@@ -57,20 +62,18 @@ async def recibir_resultado(res: Resultado):
     v = res.valor
     if v == memoria["ultimo_valor"]: return {"status": "skip"}
 
-    # --- RESET DIARIO ---
-    hoy = datetime.now().strftime("%Y-%m-%d")
-    if hoy != memoria["fecha_actual"]:
-        memoria.update({"trades_hoy": 0, "wins_hoy": 0, "fecha_actual": hoy})
-
-    # --- AUDITORÍA DE ACIERTOS ---
-    if memoria["tp_seguro"] != "--":
+    # --- 📊 AUDITORÍA Y CASTIGO CORTO ---
+    if memoria["tp_s"] != "--":
         memoria["trades_hoy"] += 1
-        # Se cuenta como éxito si supera el mínimo conservador (1.20x)
-        if v >= 1.20: memoria["wins_hoy"] += 1
+        if v >= 1.20:
+            memoria["wins_hoy"] += 1
+        else:
+            memoria["bloqueo_rondas"] = 4 # BLOQUEO RELÁMPAGO DE 4 RONDAS
 
     memoria["ultimo_valor"] = v
     memoria["historial_visual"].insert(0, v)
     if len(memoria["historial_visual"]) > 15: memoria["historial_visual"].pop()
+    if memoria["bloqueo_rondas"] > 0: memoria["bloqueo_rondas"] -= 1
     
     with csv_lock:
         with open(FILE_DB, 'a') as f: f.write(f"{v},{res.jugadores}\n")
@@ -78,24 +81,37 @@ async def recibir_resultado(res: Resultado):
     try:
         db = pd.read_csv(FILE_DB, names=['valor', 'jugadores'])
         total_vals = db.tail(250)['valor'].tolist()
-    except: total_hist = []
+    except: total_vals = []
 
-    res_ia = motor_ia_sentinel(total_vals)
+    res_ia = motor_ia_flow(total_vals)
     
     if res_ia:
-        prob, std = res_ia
-        if memoria["trades_hoy"] >= memoria["max_trades"]:
-            memoria["sugerencia"] = "🛑 SESIÓN FINALIZADA"
-            memoria["tp_seguro"] = "--"; memoria["tp_crecimiento"] = "--"
-        elif (prob >= 53 and std < 3.2):
-            memoria["sugerencia"] = "✅ CONTEXTO ESTABLE"
-            memoria["tp_seguro"] = "1.20x"
-            memoria["tp_crecimiento"] = "1.60x" if (std < 2.2 and prob >= 56) else "1.50x"
-            memoria["fase"] = "OPTIMIZACIÓN ACTIVA"
+        prob, std, baseline = res_ia
+        memoria["confianza"] = f"{round(prob)}%"
+
+        # --- 🎯 LÓGICA DE SEÑALES (RECOMENDACIÓN FINAL) ---
+        
+        if memoria["bloqueo_rondas"] > 0:
+            memoria["sugerencia"] = f"🛑 PAUSA ({memoria['bloqueo_rondas']} R.)"
+            memoria["tp_s"] = "--"; memoria["tp_e"] = "--"
+            memoria["fase"] = "PROTECCIÓN"
+        
+        # 🟢 CAPA BASE (1.20x): Probabilidad >= 52%
+        elif prob >= 52:
+            memoria["sugerencia"] = "✅ CONTEXTO RENTABLE"
+            memoria["tp_s"] = "1.20x"
+            
+            # 🔴 CAPA OPTIMIZACIÓN (1.50x): Probabilidad >= 55% + Estabilidad
+            if prob >= 55 and std < 2.8:
+                memoria["tp_e"] = "1.50x"
+                memoria["fase"] = "DIFERENCIAL ACTIVO"
+            else:
+                memoria["tp_e"] = "--"
+                memoria["fase"] = "FLUJO SEGURO"
         else:
-            memoria["sugerencia"] = "📡 ESCANEANDO RIESGO"
-            memoria["tp_seguro"] = "--"; memoria["tp_crecimiento"] = "--"
-            memoria["fase"] = "MONITOREO"
+            memoria["sugerencia"] = "⏳ ESCANEANDO"
+            memoria["tp_s"] = "--"; memoria["tp_e"] = "--"
+            memoria["fase"] = "ANÁLISIS"
             
     return {"status": "ok"}
 
