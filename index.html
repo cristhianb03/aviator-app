@@ -63,31 +63,36 @@
         </button>
     </div>
 
-    <script>
-        const API = "https://cordlike-dylan-unstrenuously.ngrok-free.dev/data";
+   <script>
+    // REEMPLAZA CON TU URL DE NGROK
+    const API = "https://cordlike-dylan-unstrenuously.ngrok-free.dev/data";
 
-        async function update() {
-            try {
-                const r = await fetch(API, { headers: { "ngrok-skip-browser-warning": "69420" } });
-                const d = await r.json();
+    async function update() {
+        try {
+            const r = await fetch(API, { headers: { "ngrok-skip-browser-warning": "69420" } });
+            const d = await r.json();
 
-                document.getElementById('val').innerText = (d.ultimo_valor || 0) + 'x';
-                document.getElementById('prob').innerText = d.confianza;
-                document.getElementById('sug').innerText = d.sugerencia;
-                document.getElementById('tp_s').innerText = d.tp_s;
-                document.getElementById('tp_e').innerText = d.tp_e;
-                
-                const wr = d.trades_hoy > 0 ? (d.wins_hoy / d.trades_hoy * 100).toFixed(0) : 0;
-                document.getElementById('winrate').innerText = wr + "%";
+            // Mapeo corregido (d.nombre debe ser igual a la llave en servidor.py)
+            document.getElementById('val').innerText = (d.ultimo_valor || 0) + 'x';
+            document.getElementById('prob').innerText = d.confianza || "0%"; 
+            document.getElementById('sug').innerText = d.sugerencia;
+            document.getElementById('tp_s').innerText = d.tp_s;
+            document.getElementById('tp_e').innerText = d.tp_e;
+            
+            // Win Rate
+            const wr = d.trades_hoy > 0 ? (d.wins_hoy / d.trades_hoy * 100).toFixed(0) : 0;
+            document.getElementById('winrate').innerText = wr + "%";
+            document.getElementById('progreso').innerText = `${d.trades_hoy} / 30`;
 
-                const panel = document.getElementById('main-panel');
-                if(d.sugerencia.includes("RENTABLE")) panel.className = "panel p-6 mb-4 text-center status-ok";
-                else if(d.sugerencia.includes("🛑") || d.sugerencia.includes("⏳")) panel.className = "panel p-6 mb-4 text-center status-stop";
-                else panel.className = "panel p-6 mb-4 text-center status-warn";
+            const panel = document.getElementById('main-panel');
+            if(d.sugerencia.includes("ESTABLE")) panel.className = "panel p-6 mb-4 text-center status-ok";
+            else if(d.sugerencia.includes("🛑") || d.sugerencia.includes("⏳")) panel.className = "panel p-6 mb-4 text-center status-stop";
+            else panel.className = "panel p-6 mb-4 text-center status-warn";
 
-            } catch(e) {}
-        }
-        setInterval(update, 1000);
-    </script>
+        } catch(e) { console.error("Reconectando..."); }
+    }
+    setInterval(update, 1000);
+</script>
 </body>
 </html>
+
