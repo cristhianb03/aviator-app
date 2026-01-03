@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>QRP v801 - Apollo Stable</title>
+    <title>QRP v802 - Audio Telemetry</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
@@ -13,15 +13,24 @@
         .status-warn { color: #f59e0b; border-color: #f59e0b !important; }
         .status-stop { color: #ef4444; border-color: #ef4444 !important; }
         .stat-card { background: #0f172a; border: 1px solid #1e293b; padding: 12px; border-radius: 8px; }
+        .btn-audio { background: #1e293b; color: white; padding: 10px; border-radius: 50%; border: 1px solid #334155; }
+        .btn-audio.active { background: #ef4444; border-color: #f87171; }
     </style>
 </head>
 <body class="p-4 flex flex-col items-center">
 
     <div class="w-full max-w-md">
-        <header class="flex justify-between items-center mb-6">
-            <h1 class="text-xs font-bold text-white uppercase tracking-tighter">SENTINEL<span class="text-red-500">QRP v801</span></h1>
-            <div class="text-[8px] bg-zinc-900 px-2 py-0.5 rounded border border-white/5 text-gray-500 font-bold tracking-widest uppercase">Stable Protocol</div>
-        </header>
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-xs font-bold text-white uppercase tracking-tighter">SENTINEL<span class="text-red-500">QRP v802</span></h1>
+            
+            <!-- Botón para Activar Sonido (Requerido por Navegadores) -->
+            <button id="audio-toggle" onclick="toggleAudio()" class="btn-audio" title="Activar Alerta Sonora">
+                <svg id="audio-icon" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15.536a5 5 0 001.414 1.414m2.828-9.9a9 9 0 011.414-1.414M11 5L8.8 7H5v10h3.8l2.2 2V5z" />
+                </svg>
+            </button>
+        </div>
 
         <!-- Monitor -->
         <div id="main-panel" class="panel p-6 mb-4 text-center">
@@ -48,16 +57,36 @@
         <div class="panel p-6 text-center">
             <p class="text-[9px] text-gray-500 uppercase mb-2">Target Táctico Sugerido</p>
             <div id="tp_s" class="text-5xl font-bold text-white mb-2">--</div>
-            <p id="fase" class="text-[9px] uppercase tracking-widest text-gray-400">Escaneando...</p>
+            <p id="fase" class="text-[9px] uppercase tracking-widest text-gray-500">Escaneando...</p>
         </div>
 
         <p class="text-[8px] mt-10 text-center text-zinc-600 uppercase">
-            Protocolo de gestión de riesgo basado en varianza histórica.
+            Protocolo de gestión de riesgo con alerta sonora activa.
         </p>
     </div>
 
+    <!-- Audio Element (Un "beeping" limpio y profesional) -->
+    <audio id="alert-sound" src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" preload="auto"></audio>
+
     <script>
+        // RECUERDA ACTUALIZAR TU URL DE NGROK
         const API = "https://cordlike-dylan-unstrenuously.ngrok-free.dev/data";
+        
+        let audioEnabled = false;
+        let lastSignal = "";
+        const alertAudio = document.getElementById('alert-sound');
+
+        function toggleAudio() {
+            audioEnabled = !audioEnabled;
+            const btn = document.getElementById('audio-toggle');
+            if(audioEnabled) {
+                btn.className = "btn-audio active";
+                // Reproducir un sonido corto para confirmar activación
+                alertAudio.play();
+            } else {
+                btn.className = "btn-audio";
+            }
+        }
 
         async function update() {
             try {
@@ -67,15 +96,26 @@
                 document.getElementById('val').innerText = (d.ultimo_valor || 0) + 'x';
                 document.getElementById('select').innerText = d.selectivity || "BAJA";
                 document.getElementById('riesgo').innerText = d.nivel_riesgo || "ALTO";
-                document.getElementById('sug').innerText = d.sugerencia || "MONITOREANDO";
+                document.getElementById('sug').innerText = d.sugerencia || "MONITOREO";
                 document.getElementById('tp_s').innerText = d.tp_s || "--";
                 document.getElementById('fase').innerText = d.fase || "BUSCANDO NODO";
 
                 const panel = document.getElementById('main-panel');
-                if(d.sugerencia.includes("EXCEPCIONAL")) panel.className = "panel p-6 mb-4 text-center status-ex";
-                else if(d.sugerencia.includes("FAVORABLE")) panel.className = "panel p-6 mb-4 text-center status-ok";
-                else if(d.sugerencia.includes("TÁCTICA")) panel.className = "panel p-6 mb-4 text-center status-warn";
-                else if(d.sugerencia.includes("ABSTENCIÓN") || d.sugerencia.includes("🛑")) panel.className = "panel p-6 mb-4 text-center status-stop";
+                const sugerenciaActual = d.sugerencia;
+
+                // --- LÓGICA DE ALERTA SONORA ---
+                if (audioEnabled && sugerenciaActual !== lastSignal) {
+                    // Si cambia a un estado de señal (Verde o Amarillo), suena el timbre
+                    if (sugerenciaActual.includes("FAVORABLE") || sugerenciaActual.includes("TÁCTICA") || sugerenciaActual.includes("EXCEPCIONAL")) {
+                        alertAudio.play();
+                    }
+                    lastSignal = sugerenciaActual;
+                }
+
+                if(sugerenciaActual.includes("EXCEPCIONAL")) panel.className = "panel p-6 mb-4 text-center status-ex";
+                else if(sugerenciaActual.includes("FAVORABLE")) panel.className = "panel p-6 mb-4 text-center status-ok";
+                else if(sugerenciaActual.includes("TÁCTICA")) panel.className = "panel p-6 mb-4 text-center status-warn";
+                else if(sugerenciaActual.includes("ABSTENCIÓN") || sugerenciaActual.includes("🛑")) panel.className = "panel p-6 mb-4 text-center status-stop";
                 else panel.className = "panel p-6 mb-4 text-center";
 
             } catch(e) { console.log("Reconectando..."); }
