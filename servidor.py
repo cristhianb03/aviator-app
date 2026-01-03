@@ -4,49 +4,62 @@ from pydantic import BaseModel
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
-import statistics
+from sklearn.metrics import precision_score
 import os
+import threading
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 class Resultado(BaseModel):
     valor: float
+    jugadores: int = 0
 
-FILE_DB = 'database_v72.csv'
+FILE_DB = 'database_qrp_audit.csv'
+csv_lock = threading.Lock()
 
+# MEMORIA MAESTRA UNIFICADA - NO CAMBIAR NOMBRES
 memoria = {
     "ultimo_valor": 0.0,
-    "sugerencia": "⏳ CALIBRANDO",
-    "confianza": "0%",
+    "sugerencia": "⏳ CALIBRANDO PROTOCOLO",
+    "estabilidad_contexto": "0%",
+    "ventaja_azar": "+0.0%",
+    "riesgo_ponderado": "ANALIZANDO",
     "tp_conservador": "--",
     "tp_agresivo": "--",
     "fase": "MONITOREO",
-    "contador_agresivo": 0,
-    # 📊 MÉTRICAS DE RENDIMIENTO (NUEVO)
-    "trades_conservador": 0,
+    "rondas_evitadas": 0,
+    "exposicion_hoy": "0%",
+    "rondas_totales": 0,
     "wins_conservador": 0,
-    "trades_agresivo": 0,
+    "trades_conservador": 0,
     "wins_agresivo": 0,
+    "trades_agresivo": 0,
+    "contador_fallos": 0,
+    "bloqueo_rondas": 0,
     "historial_visual": []
 }
 
-def motor_ia_v72(hist):
-    if len(hist) < 60: return None
+def motor_sentinel_qrp(hist_data):
+    if len(hist_data) < 100: return None
     try:
-        df = pd.DataFrame(hist[::-1], columns=['valor'])
-        df['target'] = (df['valor'].shift(-1) >= 1.25).astype(int) # Alineado a 1.25x
-        df['v1'] = df['valor'].shift(1)
-        df['v2'] = df['valor'].shift(2)
-        df['std'] = df['valor'].rolling(5).std()
+        df = pd.DataFrame(hist_data, columns=['valor', 'jugadores'])
+        df['target_exit'] = (df['valor'].shift(-1) >= 1.30).astype(int)
+        df['std_5'] = df['valor'].rolling(5).std()
+        df['ema_5'] = df['valor'].ewm(span=5).mean()
+        df['vol_change'] = df['jugadores'].diff()
         df = df.dropna()
-        
-        X = df[['v1', 'v2', 'std']]
-        model = RandomForestClassifier(n_estimators=80, max_depth=4, random_state=42).fit(X, df['target'])
-        
-        std_act = statistics.stdev(hist[:5])
-        prob = model.predict_proba(np.array([[hist[0], hist[1], std_act]]))[0][1]
-        return round(prob * 100, 2), std_act
+        features = ['valor', 'jugadores', 'std_5', 'ema_5', 'vol_change']
+        split = int(len(df) * 0.75)
+        train, test = df.iloc[:split], df.iloc[split:]
+        model = RandomForestClassifier(n_estimators=50, max_depth=3, random_state=42)
+        model.fit(train[features], train['target_exit'])
+        preds = model.predict(test[features])
+        prec_val = precision_score(test['target_exit'], preds, zero_division=0) * 100
+        baseline = test['target_exit'].mean() * 100
+        current_x = df.tail(1)[features]
+        ind_est = model.predict_proba(current_x)[0][1] * 100
+        return round(ind_est, 2), round(prec_val, 2), round(baseline, 2), df['std_5'].iloc[-1]
     except: return None
 
 @app.get("/data")
@@ -54,66 +67,63 @@ async def get_data(): return memoria
 
 @app.post("/nuevo-resultado")
 async def recibir_resultado(res: Resultado):
-    v = res.valor
+    v, j = res.valor, res.jugadores
     if v == memoria["ultimo_valor"]: return {"status": "skip"}
 
-    # --- 📊 AUDITORÍA DE RESULTADOS (NUEVO) ---
-    # Verificamos si la sugerencia de la ronda anterior fue exitosa
+    # Auditoría de resultados anteriores
     if memoria["tp_conservador"] != "--":
         memoria["trades_conservador"] += 1
         if v >= 1.20: memoria["wins_conservador"] += 1
-
     if memoria["tp_agresivo"] != "--":
         memoria["trades_agresivo"] += 1
         if v >= 1.70: memoria["wins_agresivo"] += 1
 
-    # Guardar estado previo de la agresiva para lógica de castigo
-    agresivo_activo_anterior = memoria["tp_agresivo"] != "--"
-
-    # Actualizar estado básico
     memoria["ultimo_valor"] = v
+    memoria["rondas_totales"] += 1
     memoria["historial_visual"].insert(0, v)
-    if len(memoria["historial_visual"]) > 20: memoria["historial_visual"].pop()
-    if memoria["contador_agresivo"] > 0: memoria["contador_agresivo"] -= 1
+    if len(memoria["historial_visual"]) > 15: memoria["historial_visual"].pop()
     
-    with open(FILE_DB, 'a') as f: f.write(f"{v}\n")
+    if memoria["bloqueo_rondas"] > 0: memoria["bloqueo_rondas"] -= 1
+    
+    with csv_lock:
+        with open(FILE_DB, 'a') as f: f.write(f"{v},{j}\n")
+
     try:
-        with open(FILE_DB, 'r') as f:
-            total_hist = [float(l.strip()) for l in f.readlines() if l.strip()][-150:]
+        db = pd.read_csv(FILE_DB, names=['valor', 'jugadores'])
+        total_hist = db.tail(350).values.tolist()
     except: total_hist = []
 
-    res_ia = motor_ia_v72(total_hist)
+    res_ia = motor_sentinel_qrp(total_hist)
     
     if res_ia:
-        prob, std_act = res_ia
-        memoria["confianza"] = f"{round(prob)}%"
-        
-        # 1️⃣ CAPA CONSERVADORA: Ahora con filtro de Volatilidad (std < 2.5)
-        if prob >= 56 and std_act < 2.5:
+        ind_est, prec_val, baseline, std_act = res_ia
+        ventaja_ponderada = (prec_val - baseline) * (ind_est / 100)
+        ventaja_real = round(prec_val - baseline, 2)
+        memoria["estabilidad_contexto"] = f"{round(ind_est)}%"
+        memoria["ventaja_azar"] = f"+{ventaja_real}%" if ventaja_real > 0 else f"{ventaja_real}%"
+
+        if memoria["bloqueo_rondas"] > 0:
+            memoria["sugerencia"] = "🛑 PAUSA DE SEGURIDAD"
+            memoria["tp_conservador"] = "--"; memoria["tp_agresivo"] = "--"
+            memoria["rondas_evitadas"] += 1
+        elif ind_est < 45 or std_act > 5.0:
+            memoria["sugerencia"] = "🛑 ABSTENCIÓN TÉCNICA"
+            memoria["tp_conservador"] = "--"; memoria["tp_agresivo"] = "--"
+            memoria["rondas_evitadas"] += 1
+        elif ind_est > 62 and ventaja_ponderada > 1.0:
+            memoria["sugerencia"] = "✅ CONTEXTO FAVORABLE"
+            memoria["tp_conservador"] = "1.35x"
+            memoria["tp_agresivo"] = "1.80x"
+        elif 50 <= ind_est <= 62:
+            memoria["sugerencia"] = "⚠️ VENTANA TÁCTICA"
             memoria["tp_conservador"] = "1.20x"
-            memoria["sugerencia"] = "🛡️ RIESGO CONTROLADO"
-            memoria["fase"] = "ZONA ESTABLE"
-        else:
-            memoria["tp_conservador"] = "--"
-            memoria["sugerencia"] = "⏳ ABSTENCIÓN"
-            memoria["fase"] = "VARIANZA ALTA" if std_act >= 2.5 else "SIN EDGE"
-
-        # 2️⃣ CAPA AGRESIVA: Ventana de 5 para detectar micro-secuencia
-        azules = len([x for x in total_hist[:5] if x < 1.80])
-        if (3 <= azules <= 5) and (std_act < 2.0) and (55 <= prob <= 65) and (memoria["contador_agresivo"] == 0):
-            memoria["tp_agresivo"] = "1.70x"
-            memoria["sugerencia"] = "🚀 VENTANA TÁCTICA"
-            memoria["contador_agresivo"] = 12 
-        else:
             memoria["tp_agresivo"] = "--"
+        else:
+            memoria["sugerencia"] = "⏳ MONITOREO DE VARIANZA"
+            memoria["tp_conservador"] = "--"; memoria["tp_agresivo"] = "--"
+            memoria["rondas_evitadas"] += 1
 
-        # 3️⃣ FILTRO DE CASTIGO AGRESIVO
-        if agresivo_activo_anterior and v < 1.70:
-             memoria["contador_agresivo"] = 18
-             memoria["tp_agresivo"] = "--"
-    
-    else:
-        memoria["sugerencia"] = f"🧠 ENTRENANDO ({len(total_hist)}/100)"
+        memoria["exposicion_hoy"] = f"{round(((memoria['rondas_totales'] - memoria['rondas_evitadas']) / memoria['rondas_totales']) * 100)}%"
 
     return {"status": "ok"}
 
