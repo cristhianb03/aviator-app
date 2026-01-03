@@ -1,98 +1,174 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dual-Flow Express V75</title>
+    <title>Dual-Flow Express V77 - Master</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
-        body { font-family: 'JetBrains+Mono', monospace; background: #050608; color: #a0aec0; }
-        .panel { background: #0d1117; border: 1px solid #30363d; border-radius: 12px; }
-        .status-ok { color: #10b981; border-color: #10b981 !important; box-shadow: 0 0 20px rgba(16, 185, 129, 0.1); }
-        .status-warn { color: #f59e0b; border-color: #f59e0b !important; }
-        .status-stop { color: #ef4444; border-color: #ef4444 !important; }
+        
+        body { 
+            font-family: 'JetBrains+Mono', monospace; 
+            background: #050608; 
+            color: #a0aec0; 
+            overflow-x: hidden;
+        }
+
+        .panel { 
+            background: #0d1117; 
+            border: 1px solid #1f2937; 
+            border-radius: 16px; 
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); 
+        }
+
+        /* Estados de Color Dinámicos */
+        .status-ok { border-color: #10b981 !important; color: #10b981; box-shadow: 0 0 20px rgba(16, 185, 129, 0.1); }
+        .status-warn { border-color: #f59e0b !important; color: #f59e0b; }
+        .status-stop { border-color: #ef4444 !important; color: #ef4444; }
+
+        .stat-card { 
+            background: #111827; 
+            border: 1px solid #1f2937; 
+            padding: 12px; 
+            border-radius: 12px; 
+        }
+
+        .glow-green { animation: pulse-green 2s infinite; }
+        @keyframes pulse-green { 
+            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); } 
+            70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); } 
+            100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } 
+        }
     </style>
 </head>
-<body class="p-4 flex flex-col items-center">
+<body class="p-4 flex flex-col items-center min-h-screen">
 
     <div class="w-full max-w-md">
         <!-- Header -->
         <div class="flex justify-between items-center mb-6">
-            <h1 class="text-xs font-bold text-white uppercase tracking-tighter">DUAL-FLOW<span class="text-red-600">EXPRESS v75</span></h1>
-            <div class="text-[8px] bg-zinc-800 px-2 py-0.5 rounded border border-white/10 uppercase font-bold text-gray-500">GCP PRO</div>
+            <div>
+                <h1 class="text-xs font-bold text-white uppercase tracking-tighter">DUAL-FLOW<span class="text-blue-500">EXPRESS v77</span></h1>
+                <p id="fase" class="text-[7px] text-gray-500 uppercase tracking-widest font-bold">Iniciando Telemetría...</p>
+            </div>
+            <div class="flex items-center gap-2 bg-zinc-900 px-3 py-1 rounded-full border border-white/5">
+                <div id="led" class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                <span class="text-[9px] font-bold text-gray-400 uppercase">GCP SECURE</span>
+            </div>
         </div>
 
-        <!-- Monitor -->
+        <!-- Monitor Principal -->
         <div id="main-panel" class="panel p-6 mb-4 text-center">
-            <p class="text-[9px] uppercase tracking-widest text-gray-500 mb-2">Monitor de Varianza</p>
-            <div id="val" class="text-7xl font-bold text-white mb-6">--</div>
+            <p class="text-[9px] uppercase tracking-widest text-gray-600 mb-2">Análisis de Varianza</p>
+            <div id="val" class="text-7xl font-bold text-white mb-6 tracking-tighter">--</div>
             
-            <div id="box" class="bg-zinc-900/50 rounded-lg p-4 border border-zinc-800 mb-4 text-center">
-                <p id="sug" class="text-xs font-bold uppercase tracking-tighter">Iniciando...</p>
+            <div id="box" class="bg-zinc-950 rounded-lg p-4 border border-zinc-900 mb-4 text-center">
+                <p id="sug" class="text-xs font-bold uppercase tracking-tighter text-gray-400">Sincronizando...</p>
             </div>
 
             <div class="grid grid-cols-2 gap-3">
-                <div class="bg-zinc-900/30 p-3 rounded-xl border border-white/5">
-                    <p class="text-[7px] uppercase text-gray-500">Confianza IA</p>
+                <div class="stat-card">
+                    <p class="text-[7px] uppercase text-gray-500 mb-1">Confianza IA</p>
                     <p id="prob" class="text-lg font-bold text-blue-400">0%</p>
                 </div>
-                <div class="bg-zinc-900/30 p-3 rounded-xl border border-white/5">
-                    <p class="text-[7px] uppercase text-gray-500">Win Rate Hoy</p>
+                <div class="stat-card">
+                    <p class="text-[7px] uppercase text-gray-500 mb-1">Win Rate Hoy</p>
                     <p id="winrate" class="text-lg font-bold text-green-500">0%</p>
                 </div>
             </div>
         </div>
 
-        <!-- Panel de Apuestas -->
-        <div class="grid grid-cols-2 gap-3 mb-8">
-            <div class="panel p-5 text-center border-b-4 border-green-500">
-                <p class="text-[8px] text-green-500 font-bold uppercase mb-1">Base (1.20x)</p>
-                <div id="tp_s" class="text-3xl font-bold text-white mb-1">--</div>
-                <p class="text-[7px] text-gray-600 uppercase font-bold">Cobro Fijo</p>
+        <!-- Auditoría de Sesión -->
+        <div class="grid grid-cols-2 gap-3 mb-4">
+            <div class="stat-card border-l-2 border-blue-500">
+                <p class="text-[7px] uppercase text-gray-500">Aciertos / Trades</p>
+                <p id="stats_h" class="text-xs font-bold text-white">0 / 0</p>
             </div>
-            <div class="panel p-5 text-center border-b-4 border-blue-500">
-                <p class="text-[8px] text-blue-500 font-bold uppercase mb-1">Optimizador (1.50x)</p>
-                <div id="tp_e" class="text-3xl font-bold text-white mb-1">--</div>
-                <p class="text-[7px] text-gray-600 uppercase font-bold">Salida IA</p>
+            <div class="stat-card border-l-2 border-red-500">
+                <p class="text-[7px] uppercase text-gray-500">Rondas en Pausa</p>
+                <p id="pausa" class="text-xs font-bold text-white">0</p>
             </div>
         </div>
 
-        <button onclick="location.reload()" class="w-full py-4 bg-white text-black font-bold text-[9px] uppercase tracking-[0.3em] rounded-xl active:scale-95 transition-all shadow-xl">
-            Sincronizar Panel
+        <!-- Panel de Doble Apuesta -->
+        <div class="grid grid-cols-2 gap-3 mb-8">
+            <div class="panel p-5 text-center border-b-4 border-green-500">
+                <p class="text-[8px] text-green-500 font-bold uppercase mb-1">Apuesta A (60%)</p>
+                <div id="tp_s" class="text-3xl font-bold text-white mb-1">--</div>
+                <p class="text-[7px] text-gray-600 uppercase font-bold">Auto 1.20x</p>
+            </div>
+            <div class="panel p-5 text-center border-b-4 border-blue-500">
+                <p class="text-[8px] text-blue-500 font-bold uppercase mb-1">Apuesta B (40%)</p>
+                <div id="tp_e" class="text-3xl font-bold text-white mb-1">--</div>
+                <p class="text-[7px] text-gray-600 uppercase font-bold">Auto 1.50x</p>
+            </div>
+        </div>
+
+        <button onclick="location.reload()" class="w-full py-4 bg-white text-black font-bold text-[10px] uppercase tracking-[0.3em] rounded-xl active:scale-95 transition-all shadow-xl">
+            Sincronizar Telemetría
         </button>
+
+        <p class="text-[7px] mt-10 text-center text-zinc-600 uppercase leading-relaxed px-4">
+            <b>Métrica QRP v77:</b> Este sistema utiliza un modelo de cadencia obligatoria para reducir el drawdown. 
+            No constituye garantía de resultados.
+        </p>
     </div>
 
-   <script>
-    // REEMPLAZA CON TU URL DE NGROK
-    const API = "https://cordlike-dylan-unstrenuously.ngrok-free.dev/data";
+    <script>
+        // --- CAMBIAR POR TU URL DE NGROK ---
+        const API_URL = "https://cordlike-dylan-unstrenuously.ngrok-free.dev/data";
 
-    async function update() {
-        try {
-            const r = await fetch(API, { headers: { "ngrok-skip-browser-warning": "69420" } });
-            const d = await r.json();
+        async function updateDashboard() {
+            try {
+                const response = await fetch(API_URL, {
+                    headers: { "ngrok-skip-browser-warning": "69420" }
+                });
+                
+                if (!response.ok) throw new Error('Offline');
+                const d = await response.json();
 
-            // Mapeo corregido (d.nombre debe ser igual a la llave en servidor.py)
-            document.getElementById('val').innerText = (d.ultimo_valor || 0) + 'x';
-            document.getElementById('prob').innerText = d.confianza || "0%"; 
-            document.getElementById('sug').innerText = d.sugerencia;
-            document.getElementById('tp_s').innerText = d.tp_s;
-            document.getElementById('tp_e').innerText = d.tp_e;
-            
-            // Win Rate
-            const wr = d.trades_hoy > 0 ? (d.wins_hoy / d.trades_hoy * 100).toFixed(0) : 0;
-            document.getElementById('winrate').innerText = wr + "%";
-            document.getElementById('progreso').innerText = `${d.trades_hoy} / 30`;
+                // 1. Datos Principales
+                document.getElementById('val').innerText = (d.ultimo_valor || 0) + 'x';
+                document.getElementById('prob').innerText = d.confianza || "0%";
+                document.getElementById('sug').innerText = d.sugerencia || "ESPERANDO";
+                document.getElementById('fase').innerText = d.fase || "MONITOREO";
+                document.getElementById('tp_s').innerText = d.tp_s || "--";
+                document.getElementById('tp_e').innerText = d.tp_e || "--";
 
-            const panel = document.getElementById('main-panel');
-            if(d.sugerencia.includes("ESTABLE")) panel.className = "panel p-6 mb-4 text-center status-ok";
-            else if(d.sugerencia.includes("🛑") || d.sugerencia.includes("⏳")) panel.className = "panel p-6 mb-4 text-center status-stop";
-            else panel.className = "panel p-6 mb-4 text-center status-warn";
+                // 2. Auditoría de Sesión
+                document.getElementById('stats_h').innerText = `${d.wins_hoy} / ${d.trades_hoy}`;
+                document.getElementById('pausa').innerText = d.block_rondas || d.bloqueo_rondas || 0;
+                
+                const wr = d.trades_hoy > 0 ? (d.wins_hoy / d.trades_hoy * 100).toFixed(0) : 0;
+                document.getElementById('winrate').innerText = wr + "%";
 
-        } catch(e) { console.error("Reconectando..."); }
-    }
-    setInterval(update, 1000);
-</script>
+                // 3. Lógica de Colores Visuales
+                const panel = document.getElementById('main-panel');
+                const sugText = d.sugerencia;
+
+                if(sugText.includes("RENTABLE")) {
+                    panel.className = "panel p-6 mb-4 text-center status-ok glow-green";
+                } else if(sugText.includes("ENFRIAMIENTO") || sugText.includes("PAUSA")) {
+                    panel.className = "panel p-6 mb-4 text-center status-stop opacity-90";
+                } else if(sugText.includes("MONITOREO") || sugText.includes("⏳")) {
+                    panel.className = "panel p-6 mb-4 text-center status-warn";
+                } else {
+                    panel.className = "panel p-6 mb-4 text-center";
+                }
+
+                // LED Verde si hay conexión
+                document.getElementById('led').className = "w-2 h-2 bg-green-500 rounded-full animate-pulse";
+
+            } catch (error) {
+                console.error("Fallo de conexión:", error);
+                document.getElementById('led').className = "w-2 h-2 bg-red-600 rounded-full";
+            }
+        }
+
+        // Actualizar cada segundo para precisión táctica
+        setInterval(updateDashboard, 1000);
+        updateDashboard();
+    </script>
 </body>
 </html>
-
