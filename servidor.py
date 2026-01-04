@@ -21,16 +21,18 @@ class Resultado(BaseModel):
 FILE_DB = 'database_v80_tactical.csv'
 csv_lock = threading.Lock()
 
+# MEMORIA MAESTRA V80.1 - NOMBRES SINCRONIZADOS CON EL INDEX
 memoria = {
     "ultimo_valor": 0.0,
     "sugerencia": "⏳ CALIBRANDO",
     "fase": "MONITOREO",
-    "tp_seguro": "--",
-    "tp_crecimiento": "--",
+    "tp_s": "--", 
+    "tp_e": "--", 
     "rondas_sin_entrar": 0,
     "bloqueo_rondas": 0,
     "trades_hoy": 0,
     "wins_hoy": 0,
+    "estabilidad_contexto": "0%",
     "historial_visual": []
 }
 
@@ -50,9 +52,7 @@ def motor_ia_adaptive(hist):
         std_act = statistics.stdev(hist[-5:])
         prob = model.predict_proba(np.array([[hist[-1], hist[-2], std_act]]))[0][1]
         
-        # Suelo de Baseline para evitar mercados basura
         baseline = max(48, df['target'].mean() * 100)
-        
         return round(prob * 100, 2), round(std_act, 2), round(baseline, 2)
     except: return None
 
@@ -64,17 +64,15 @@ async def recibir_resultado(res: Resultado):
     v = res.valor
     if v == memoria["ultimo_valor"]: return {"status": "skip"}
 
-    # 🔁 Decremento del bloqueo al inicio
     if memoria["bloqueo_rondas"] > 0:
         memoria["bloqueo_rondas"] -= 1
 
-    # Auditoría de la ronda anterior
-    hubo_senal_previa = memoria["tp_seguro"] != "--" or memoria["tp_crecimiento"] != "--"
+    hubo_senal_previa = memoria["tp_s"] != "--" or memoria["tp_e"] != "--"
     if hubo_senal_previa:
         memoria["trades_hoy"] += 1
         if v >= 1.20: 
             memoria["wins_hoy"] += 1
-            memoria["rondas_sin_entrar"] = 10 # Reset amplio tras éxito
+            memoria["rondas_sin_entrar"] = 10 
         else:
             memoria["bloqueo_rondas"] = 4 
             memoria["rondas_sin_entrar"] = 0
@@ -98,48 +96,37 @@ async def recibir_resultado(res: Resultado):
         memoria["estabilidad_contexto"] = f"{round(prob)}%"
         bajos_recientes = len([x for x in total_vals[-5:] if x < 1.40])
         
-        # --- LÓGICA DE ESTADOS V80 (ORDEN CRÍTICO) ---
-        
-        # 1. Bloqueo duro
+        # --- LÓGICA DE ESTADOS (MANTIENE LA VERSIÓN 80) ---
         if memoria["bloqueo_rondas"] > 0:
             memoria["sugerencia"] = f"🛑 PAUSA ({memoria['bloqueo_rondas']} R.)"
-            memoria["tp_seguro"] = "--"; memoria["tp_crecimiento"] = "--"
+            memoria["tp_s"] = "--"; memoria["tp_e"] = "--"
             memoria["fase"] = "ENFRIAMIENTO"
-
-        # 2. Soft Reset post-bloqueo
         elif memoria["rondas_sin_entrar"] < 2:
             memoria["sugerencia"] = "⏳ REARMANDO CONTEXTO"
-            memoria["tp_seguro"] = "--"; memoria["tp_crecimiento"] = "--"
+            memoria["tp_s"] = "--"; memoria["tp_e"] = "--"
             memoria["fase"] = "ESTABILIZANDO"
             memoria["rondas_sin_entrar"] += 1
-
-        # 3. Escenario Ideal (Verde)
         elif prob >= 52 and std < 3.2:
-            memoria["sugerencia"] = "✅ CONTEXTO RENTABLE"
-            memoria["tp_seguro"] = "1.20x"
-            memoria["tp_crecimiento"] = "1.50x" if (std < 2.8 and prob >= 55) else "--"
+            memoria["sugerencia"] = "✅ CONTEXTO ESTABLE"
+            memoria["tp_s"] = "1.20x"
+            memoria["tp_e"] = "1.50x" if (std < 2.8 and prob >= 55) else "--"
             memoria["fase"] = "ZONA VALIDADA"
             memoria["rondas_sin_entrar"] = 5
-
-        # 4. Anti-Silencio (Acumulación)
         elif bajos_recientes >= 4 and prob >= (baseline - 5):
             memoria["sugerencia"] = "🟡 PREPARACIÓN ACTIVA"
-            memoria["tp_seguro"] = "1.20x"
-            memoria["tp_crecimiento"] = "--"
+            memoria["tp_s"] = "1.20x"
+            memoria["tp_e"] = "--"
             memoria["fase"] = "RECUPERACIÓN"
             memoria["rondas_sin_entrar"] = 5
-
-        # 🎯 5. CLÁUSULA DE PERSISTENCIA (Añadida aquí)
         elif memoria["rondas_sin_entrar"] >= 6 and prob >= 50:
             memoria["sugerencia"] = "🟢 ENTRADA TÁCTICA"
-            memoria["tp_seguro"] = "1.20x"
-            memoria["tp_crecimiento"] = "--"
+            memoria["tp_s"] = "1.20x"
+            memoria["tp_e"] = "--"
             memoria["fase"] = "PERSISTENCIA"
-            memoria["rondas_sin_entrar"] = 3 # Reset parcial para mantener ritmo
-
+            memoria["rondas_sin_entrar"] = 3 
         else:
             memoria["sugerencia"] = "📡 ESCANEANDO"
-            memoria["tp_seguro"] = "--"; memoria["tp_crecimiento"] = "--"
+            memoria["tp_s"] = "--"; memoria["tp_e"] = "--"
             memoria["fase"] = "MONITOREO"
             memoria["rondas_sin_entrar"] += 1
             
