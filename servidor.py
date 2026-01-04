@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -18,15 +17,17 @@ class Resultado(BaseModel):
     valor: float
     jugadores: int = 0
 
-FILE_DB = 'database_v80_tactical.csv'
+FILE_DB = 'database_v80_final.csv'
 csv_lock = threading.Lock()
 
+# MEMORIA MAESTRA V80.2 - SINCRONIZACIÓN Y AUDITORÍA REAL
 memoria = {
     "ultimo_valor": 0.0,
     "sugerencia": "⏳ CALIBRANDO",
+    "confianza": "0%",
+    "tp_s": "--",
+    "tp_e": "--",
     "fase": "MONITOREO",
-    "tp_seguro": "--",
-    "tp_crecimiento": "--",
     "rondas_sin_entrar": 0,
     "bloqueo_rondas": 0,
     "trades_hoy": 0,
@@ -39,20 +40,14 @@ def motor_ia_adaptive(hist):
     try:
         df = pd.DataFrame(hist, columns=['valor'])
         df['target'] = (df['valor'].shift(-1) >= 1.25).astype(int)
-        df['v1'] = df['valor'].shift(1)
-        df['v2'] = df['valor'].shift(2)
+        df['v1'] = df['valor'].shift(1); df['v2'] = df['valor'].shift(2)
         df['std'] = df['valor'].rolling(5).std()
         df = df.dropna()
-        
         X = df[['v1', 'v2', 'std']]
         model = RandomForestClassifier(n_estimators=50, max_depth=3, random_state=42).fit(X, df['target'])
-        
         std_act = statistics.stdev(hist[-5:])
         prob = model.predict_proba(np.array([[hist[-1], hist[-2], std_act]]))[0][1]
-        
-        # Suelo de Baseline para evitar mercados basura
         baseline = max(48, df['target'].mean() * 100)
-        
         return round(prob * 100, 2), round(std_act, 2), round(baseline, 2)
     except: return None
 
@@ -64,21 +59,30 @@ async def recibir_resultado(res: Resultado):
     v = res.valor
     if v == memoria["ultimo_valor"]: return {"status": "skip"}
 
-    # 🔁 Decremento del bloqueo al inicio
+    # 1️⃣ DECREMENTO DE BLOQUEO (Al inicio de ronda)
     if memoria["bloqueo_rondas"] > 0:
         memoria["bloqueo_rondas"] -= 1
 
-    # Auditoría de la ronda anterior
-    hubo_senal_previa = memoria["tp_seguro"] != "--" or memoria["tp_crecimiento"] != "--"
+    # 2️⃣ AUDITORÍA REAL (ANTES DE LIMPIAR)
+    # Verificamos si en la ronda anterior el bot sugirió entrar
+    hubo_senal_previa = memoria["tp_s"] != "--" or memoria["tp_e"] != "--"
+    
     if hubo_senal_previa:
         memoria["trades_hoy"] += 1
-        if v >= 1.20: 
+        # Éxito real: el avión superó el mínimo sugerido (1.20x)
+        if v >= 1.20:
             memoria["wins_hoy"] += 1
-            memoria["rondas_sin_entrar"] = 10 # Reset amplio tras éxito
+            memoria["rondas_sin_entrar"] = 10 # Reset por éxito
         else:
-            memoria["bloqueo_rondas"] = 4 
+            # Fallo real: el bot sugirió y el avión cayó antes. Castigo.
+            memoria["bloqueo_rondas"] = 4
             memoria["rondas_sin_entrar"] = 0
 
+    # 3️⃣ LIMPIEZA DE SEÑAL PARA NUEVA RONDA
+    memoria["tp_s"] = "--"
+    memoria["tp_e"] = "--"
+
+    # 4️⃣ ACTUALIZACIÓN DE HISTORIAL (CORREGIDO ERROR DE SINTAXIS)
     memoria["ultimo_valor"] = v
     memoria["historial_visual"].insert(0, v)
     if len(memoria["historial_visual"]) > 15: memoria["historial_visual"].pop()
@@ -89,57 +93,55 @@ async def recibir_resultado(res: Resultado):
     try:
         db = pd.read_csv(FILE_DB, names=['valor', 'jugadores'])
         total_vals = db.tail(250)['valor'].tolist()
-    except: total_vals = []
+    except: total_hist = []
 
     res_ia = motor_ia_adaptive(total_vals)
     
     if res_ia:
         prob, std, baseline = res_ia
-        memoria["estabilidad_contexto"] = f"{round(prob)}%"
+        memoria["confianza"] = f"{round(prob)}%"
         bajos_recientes = len([x for x in total_vals[-5:] if x < 1.40])
         
-        # --- LÓGICA DE ESTADOS V80 (ORDEN CRÍTICO) ---
+        # --- 5️⃣ LÓGICA DE ESTADOS V80.2 ---
         
-        # 1. Bloqueo duro
+        # A. BLOQUEO ACTIVO
         if memoria["bloqueo_rondas"] > 0:
             memoria["sugerencia"] = f"🛑 PAUSA ({memoria['bloqueo_rondas']} R.)"
-            memoria["tp_seguro"] = "--"; memoria["tp_crecimiento"] = "--"
             memoria["fase"] = "ENFRIAMIENTO"
 
-        # 2. Soft Reset post-bloqueo
+        # B. SOFT RESET POST-FALLO
         elif memoria["rondas_sin_entrar"] < 2:
             memoria["sugerencia"] = "⏳ REARMANDO CONTEXTO"
-            memoria["tp_seguro"] = "--"; memoria["tp_crecimiento"] = "--"
             memoria["fase"] = "ESTABILIZANDO"
             memoria["rondas_sin_entrar"] += 1
 
-        # 3. Escenario Ideal (Verde)
+        # C. CONTEXTO RENTABLE (ZONA VERDE)
         elif prob >= 52 and std < 3.2:
             memoria["sugerencia"] = "✅ CONTEXTO RENTABLE"
-            memoria["tp_seguro"] = "1.20x"
-            memoria["tp_crecimiento"] = "1.50x" if (std < 2.8 and prob >= 55) else "--"
-            memoria["fase"] = "ZONA VALIDADA"
+            memoria["tp_s"] = "1.20x"
+            if prob >= 55 and std < 2.8:
+                memoria["tp_e"] = "1.50x"
+                memoria["fase"] = "OPTIMIZACIÓN FLUJO"
+            else:
+                memoria["fase"] = "ZONA VALIDADA"
             memoria["rondas_sin_entrar"] = 5
 
-        # 4. Anti-Silencio (Acumulación)
+        # D. RECUPERACIÓN POST-BAJOS
         elif bajos_recientes >= 4 and prob >= (baseline - 5):
             memoria["sugerencia"] = "🟡 PREPARACIÓN ACTIVA"
-            memoria["tp_seguro"] = "1.20x"
-            memoria["tp_crecimiento"] = "--"
+            memoria["tp_s"] = "1.20x"
             memoria["fase"] = "RECUPERACIÓN"
             memoria["rondas_sin_entrar"] = 5
 
-        # 🎯 5. CLÁUSULA DE PERSISTENCIA (Añadida aquí)
+        # E. PERSISTENCIA TÁCTICA (ANTISILENCIO)
         elif memoria["rondas_sin_entrar"] >= 6 and prob >= 50:
             memoria["sugerencia"] = "🟢 ENTRADA TÁCTICA"
-            memoria["tp_seguro"] = "1.20x"
-            memoria["tp_crecimiento"] = "--"
+            memoria["tp_s"] = "1.20x"
             memoria["fase"] = "PERSISTENCIA"
-            memoria["rondas_sin_entrar"] = 3 # Reset parcial para mantener ritmo
+            memoria["rondas_sin_entrar"] = 3
 
         else:
             memoria["sugerencia"] = "📡 ESCANEANDO"
-            memoria["tp_seguro"] = "--"; memoria["tp_crecimiento"] = "--"
             memoria["fase"] = "MONITOREO"
             memoria["rondas_sin_entrar"] += 1
             
