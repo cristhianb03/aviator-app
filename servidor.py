@@ -8,7 +8,6 @@ from sklearn.metrics import precision_score
 import os
 import threading
 import statistics
-from datetime import datetime
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -20,6 +19,7 @@ class Resultado(BaseModel):
 FILE_DB = 'database_v83_final.csv'
 csv_lock = threading.Lock()
 
+# Memoria Maestra V83.1 - Lógica de Control Validada
 memoria = {
     "ultimo_valor": 0.0,
     "sugerencia": "⏳ CALIBRANDO",
@@ -29,8 +29,7 @@ memoria = {
     "fase": "MONITOREO",
     "rondas_sin_entrar": 0,
     "bloqueo_rondas": 0,
-    "contexto_vivo": 0,
-    "trade_activo": False, 
+    "trade_confirmado": False,
     "trades_hoy": 0,
     "wins_hoy": 0,
     "historial_visual": []
@@ -55,26 +54,33 @@ def motor_ia_adaptive(hist):
 @app.get("/data")
 async def get_data(): return memoria
 
+@app.get("/confirmar-trade")
+async def confirmar_trade():
+    memoria["trade_confirmado"] = True
+    return {"status": "Trade registrado"}
+
 @app.post("/nuevo-resultado")
 async def recibir_resultado(res: Resultado):
     v = res.valor
     if v == memoria["ultimo_valor"]: return {"status": "skip"}
 
-    # 1️⃣ AUDITORÍA (Se ejecuta con el estado de la ronda que acaba de terminar)
-    if memoria["trade_activo"]:
+    # --- 1️⃣ AUDITORÍA MANUAL Y GESTIÓN DE BLOQUEO ---
+    just_lost = False
+    if memoria["trade_confirmado"]:
         memoria["trades_hoy"] += 1
         if v >= 1.20: 
             memoria["wins_hoy"] += 1
             memoria["bloqueo_rondas"] = 0 
         else:
-            memoria["bloqueo_rondas"] = 4 
-            memoria["contexto_vivo"] = 0
+            memoria["bloqueo_rondas"] = 4 # Penalidad
+            just_lost = True # Flag para evitar el decremento inmediato
+        memoria["trade_confirmado"] = False
 
-    # 2️⃣ DECREMENTO DE BLOQUEO (Inicio de la nueva ronda)
-    if memoria["bloqueo_rondas"] > 0:
+    # 2️⃣ DECREMENTO INTELIGENTE (Mejora sugerida)
+    # Solo descuenta si NO acabamos de perder en este mismo instante
+    if memoria["bloqueo_rondas"] > 0 and not just_lost:
         memoria["bloqueo_rondas"] -= 1
 
-    # Actualización de datos
     memoria["ultimo_valor"] = v
     memoria["historial_visual"].insert(0, v)
     if len(memoria["historial_visual"]) > 15: memoria["historial_visual"].pop()
@@ -94,46 +100,27 @@ async def recibir_resultado(res: Resultado):
         memoria["confianza"] = f"{round(prob)}%"
         bajos_recientes = len([x for x in total_vals[-5:] if x < 1.40])
         
-        # --- EVALUACIÓN DE CONTEXTO ---
+        # Evaluación de Contexto
         contexto_rentable = (prob >= 52 and std < 3.2)
         preparacion_activa = (bajos_recientes >= 4 and prob >= (baseline - 5))
         persistencia = (memoria["rondas_sin_entrar"] >= 4 and prob >= 48)
 
-        # --- 🎯 3️⃣ LÓGICA DE ESTADOS PERSISTENTES ---
-        
-        if memoria["bloqueo_rondas"] > 0:
-            memoria["tp_s"] = "--"; memoria["tp_e"] = "--"
-            memoria["trade_activo"] = False
-            memoria["sugerencia"] = f"🛑 PAUSA ({memoria['bloqueo_rondas']} R.)"
-            memoria["fase"] = "ENFRIAMIENTO"
-
-        elif contexto_rentable or preparacion_activa or persistencia:
-            if memoria["contexto_vivo"] == 0:
-                memoria["contexto_vivo"] = 3
-            
+        if contexto_rentable or preparacion_activa or persistencia:
             memoria["tp_s"] = "1.20x"
             memoria["tp_e"] = "1.50x" if (prob >= 54 and std < 2.8) else "--"
-            memoria["trade_activo"] = True 
             memoria["rondas_sin_entrar"] = 0
-            memoria["sugerencia"] = "✅ CONTEXTO RENTABLE"
-            memoria["fase"] = "ZONA VALIDADA"
-            
-        else:
-            # 🔄 4️⃣ MODO OBSERVACIÓN (Mantiene la señal sin resetear al inicio)
-            if memoria["contexto_vivo"] > 0:
-                memoria["contexto_vivo"] -= 1
-                memoria["tp_s"] = "1.20x"
-                memoria["tp_e"] = "1.50x" if prob >= 54 else "--"
-                memoria["trade_activo"] = False # Solo informativo, no audita fallos
-                memoria["sugerencia"] = "🟡 CONTEXTO EN OBSERVACIÓN"
-                memoria["fase"] = f"MEMORIA ({memoria['contexto_vivo']})"
+
+            if memoria["bloqueo_rondas"] > 0:
+                memoria["sugerencia"] = f"⚠️ RIESGO ALTO (ESPERAR {memoria['bloqueo_rondas']} R.)"
+                memoria["fase"] = "GESTIÓN DE PÉRDIDAS"
             else:
-                # ❌ ÚNICO PUNTO DE LIMPIEZA: Cuando realmente no hay contexto ni memoria
-                memoria["tp_s"] = "--"; memoria["tp_e"] = "--"
-                memoria["trade_activo"] = False
-                memoria["sugerencia"] = "📡 ESCANEANDO"
-                memoria["fase"] = "MONITOREO"
-                memoria["rondas_sin_entrar"] += 1
+                memoria["sugerencia"] = "✅ CONTEXTO RENTABLE"
+                memoria["fase"] = "ZONA VALIDADA"
+        else:
+            memoria["tp_s"] = "--"; memoria["tp_e"] = "--"
+            memoria["sugerencia"] = "📡 ESCANEANDO"
+            memoria["fase"] = "MONITOREO"
+            memoria["rondas_sin_entrar"] += 1
             
     return {"status": "ok"}
 
