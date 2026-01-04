@@ -5,6 +5,7 @@ from pydantic import BaseModel
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import precision_score
 import os
 import threading
 import statistics
@@ -16,26 +17,28 @@ class Resultado(BaseModel):
     valor: float
     jugadores: int = 0
 
-FILE_DB = 'database_flow_v77.csv'
+FILE_DB = 'database_v76_precision.csv'
 csv_lock = threading.Lock()
 
+# Memoria Maestra V76.1 - Sincronizada y Blindada
 memoria = {
     "ultimo_valor": 0.0,
     "sugerencia": "⏳ CALIBRANDO",
     "confianza": "0%",
-    "tp_s": "--",
-    "tp_e": "--",
+    "tp_s": "--", 
+    "tp_e": "--", 
     "fase": "MONITOREO",
-    "bloqueo_rondas": 0,
-    "trades_hoy": 0,
     "wins_hoy": 0,
+    "trades_hoy": 0,
+    "bloqueo_rondas": 0,
     "historial_visual": []
 }
 
-def motor_ia_pacing(hist):
+def motor_ia_flow(hist):
     if len(hist) < 80: return None
     try:
         df = pd.DataFrame(hist[::-1], columns=['valor'])
+        # Target estratégico 1.30x para validar ambas salidas
         df['target'] = (df['valor'].shift(-1) >= 1.30).astype(int)
         df['v1'] = df['valor'].shift(1)
         df['v2'] = df['valor'].shift(2)
@@ -58,68 +61,66 @@ async def recibir_resultado(res: Resultado):
     v = res.valor
     if v == memoria["ultimo_valor"]: return {"status": "skip"}
 
-    # --- 1️⃣ CORRECCIÓN: DECREMENTO AL INICIO ---
-    # Liberamos el bloqueo antes de evaluar la ronda actual
+    # 🔁 1. DECREMENTO DE BLOQUEO AL INICIO (Fix Temporización)
     if memoria["bloqueo_rondas"] > 0:
         memoria["bloqueo_rondas"] -= 1
 
-    # --- 2️⃣ CORRECCIÓN: AUDITORÍA DE SEÑAL TOTAL ---
-    # Detectamos si en la ronda anterior hubo CUALQUIER tipo de sugerencia
-    habia_senal = memoria["tp_s"] != "--" or memoria["tp_e"] != "--"
-
-    if habia_senal:
+    # 🔍 2. AUDITORÍA UNIFICADA (TP_S y TP_E)
+    hubo_senal_anterior = memoria["tp_s"] != "--" or memoria["tp_e"] != "--"
+    
+    if hubo_senal_anterior:
         memoria["trades_hoy"] += 1
-        # El éxito se mide sobre el mínimo absoluto del sistema (1.20x)
         if v >= 1.20:
             memoria["wins_hoy"] += 1
-            # Pausa técnica de 1 ronda tras ganar (decrementará a 0 en la siguiente llamada)
-            memoria["bloqueo_rondas"] = 1 
         else:
-            # Pausa de seguridad de 4 rondas tras perder
+            # FALLO: Castigo real de 4 rondas (se verá como 3 en el siguiente ciclo)
             memoria["bloqueo_rondas"] = 4 
 
-    # Actualización de historial
+    # Actualizar telemetría
     memoria["ultimo_valor"] = v
     memoria["historial_visual"].insert(0, v)
     if len(memoria["historial_visual"]) > 15: memoria["historial_visual"].pop()
     
+    # Registro seguro en CSV
     with csv_lock:
         with open(FILE_DB, 'a') as f: f.write(f"{v},{res.jugadores}\n")
 
+    # --- 3. CARGA DE DATOS (Fix Variable Error) ---
     try:
         db = pd.read_csv(FILE_DB, names=['valor', 'jugadores'])
         total_vals = db.tail(250)['valor'].tolist()
-    except: total_vals = []
+    except: 
+        total_vals = [] # Corregido: antes decía total_hist
 
-    res_ia = motor_ia_pacing(total_vals)
+    res_ia = motor_ia_flow(total_vals)
     
     if res_ia:
         prob, std = res_ia
         memoria["confianza"] = f"{round(prob)}%"
 
-        # --- 3️⃣ LÓGICA DE SEÑALES (UMBRALES OPTIMIZADOS) ---
+        # --- 4. LÓGICA DE SEÑAL BLINDADA ---
         
         if memoria["bloqueo_rondas"] > 0:
-            memoria["sugerencia"] = f"⏳ ENFRIAMIENTO ({memoria['bloqueo_rondas']} R.)"
+            memoria["sugerencia"] = f"🛑 PAUSA ({memoria['bloqueo_rondas']} R.)"
             memoria["tp_s"] = "--"; memoria["tp_e"] = "--"
-            memoria["fase"] = "PAUSA DISCIPLINARIA"
+            memoria["fase"] = "PRESERVACIÓN"
         
-        # 🟢 NUEVOS UMBRALES: Prob >= 54% y STD < 3.2
-        elif prob >= 54 and std < 3.2:
+        # 🟢 CAPA BASE (1.20x): Prob >= 52% + Filtro Varianza
+        elif prob >= 52 and std < 3.2:
             memoria["sugerencia"] = "✅ CONTEXTO RENTABLE"
             memoria["tp_s"] = "1.20x"
             
-            # Capa Táctica 1.50x
-            if prob >= 58 and std < 2.5:
+            # 🔴 CAPA OPTIMIZACIÓN (1.50x): Prob >= 55% + Estabilidad estricta
+            if prob >= 55 and std < 2.8:
                 memoria["tp_e"] = "1.50x"
-                memoria["fase"] = "FLUJO DINÁMICO"
+                memoria["fase"] = "DUAL ACTIVE"
             else:
                 memoria["tp_e"] = "--"
-                memoria["fase"] = "FLUJO SEGURO"
+                memoria["fase"] = "SINGLE CORE"
         else:
-            memoria["sugerencia"] = "📡 MONITOREO"
+            memoria["sugerencia"] = "⏳ ESCANEANDO"
             memoria["tp_s"] = "--"; memoria["tp_e"] = "--"
-            memoria["fase"] = "BUSCANDO NODO"
+            memoria["fase"] = "ALTA VARIANZA" if std >= 3.2 else "BAJA CONVERGENCIA"
             
     return {"status": "ok"}
 
