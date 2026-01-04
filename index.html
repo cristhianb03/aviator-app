@@ -4,27 +4,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dual-Flow Express V77 - Master</title>
+    <title>Apollo QRP v80 - Tactical Persistence</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
         
         body { 
             font-family: 'JetBrains+Mono', monospace; 
-            background: #050608; 
-            color: #a0aec0; 
+            background: #020406; 
+            color: #8a99ae; 
             overflow-x: hidden;
         }
 
         .panel { 
             background: #0d1117; 
-            border: 1px solid #1f2937; 
+            border: 1px solid #30363d; 
             border-radius: 16px; 
             transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); 
         }
 
-        /* Estados de Color Dinámicos */
+        /* --- ESTADOS DE COLOR TÁCTICOS --- */
         .status-ok { border-color: #10b981 !important; color: #10b981; box-shadow: 0 0 20px rgba(16, 185, 129, 0.1); }
+        .status-tactical { border-color: #06b6d4 !important; color: #06b6d4; box-shadow: 0 0 20px rgba(6, 182, 212, 0.1); } /* Cian para persistencia */
         .status-warn { border-color: #f59e0b !important; color: #f59e0b; }
         .status-stop { border-color: #ef4444 !important; color: #ef4444; }
 
@@ -35,32 +36,44 @@
             border-radius: 12px; 
         }
 
-        .glow-green { animation: pulse-green 2s infinite; }
-        @keyframes pulse-green { 
-            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); } 
-            70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); } 
-            100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } 
+        .btn-audio { 
+            background: #1e293b; 
+            color: white; 
+            padding: 10px; 
+            border-radius: 50%; 
+            border: 1px solid #334155; 
+            transition: all 0.3s;
         }
+        .btn-audio.active { background: #ef4444; border-color: #f87171; animation: pulse-red 2s infinite; }
+
+        @keyframes pulse-red { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+        
+        /* Ocultar barra de scroll */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
     </style>
 </head>
 <body class="p-4 flex flex-col items-center min-h-screen">
 
     <div class="w-full max-w-md">
-        <!-- Header -->
+        <!-- BARRA SUPERIOR -->
         <div class="flex justify-between items-center mb-6">
             <div>
-                <h1 class="text-xs font-bold text-white uppercase tracking-tighter">DUAL-FLOW<span class="text-blue-500">EXPRESS v77</span></h1>
-                <p id="fase" class="text-[7px] text-gray-500 uppercase tracking-widest font-bold">Iniciando Telemetría...</p>
+                <h1 class="text-xs font-bold text-white uppercase tracking-tighter">APOLLO<span class="text-blue-500">QRP v80.0</span></h1>
+                <p id="fase" class="text-[7px] text-gray-500 uppercase tracking-widest font-bold">MONITOREANDO...</p>
             </div>
-            <div class="flex items-center gap-2 bg-zinc-900 px-3 py-1 rounded-full border border-white/5">
-                <div id="led" class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                <span class="text-[9px] font-bold text-gray-400 uppercase">GCP SECURE</span>
+            <div class="flex items-center gap-3">
+                <div class="text-[8px] bg-zinc-900 px-2 py-0.5 rounded border border-white/5 uppercase font-bold text-gray-400">GCP Tactical</div>
+                <button id="audio-toggle" onclick="toggleAudio()" class="btn-audio">
+                    <svg id="audio-icon" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15.536a5 5 0 001.414 1.414m2.828-9.9a9 9 0 011.414-1.414M11 5L8.8 7H5v10h3.8l2.2 2V5z" />
+                    </svg>
+                </button>
             </div>
         </div>
 
-        <!-- Monitor Principal -->
+        <!-- MONITOR PRINCIPAL -->
         <div id="main-panel" class="panel p-6 mb-4 text-center">
-            <p class="text-[9px] uppercase tracking-widest text-gray-600 mb-2">Análisis de Varianza</p>
+            <p class="text-[9px] uppercase tracking-widest text-gray-600 mb-2">Evaluación de Varianza</p>
             <div id="val" class="text-7xl font-bold text-white mb-6 tracking-tighter">--</div>
             
             <div id="box" class="bg-zinc-950 rounded-lg p-4 border border-zinc-900 mb-4 text-center">
@@ -79,29 +92,29 @@
             </div>
         </div>
 
-        <!-- Auditoría de Sesión -->
+        <!-- AUDITORÍA DE SESIÓN -->
         <div class="grid grid-cols-2 gap-3 mb-4">
-            <div class="stat-card border-l-2 border-blue-500">
+            <div class="stat-card border-l-2 border-zinc-700">
                 <p class="text-[7px] uppercase text-gray-500">Aciertos / Trades</p>
-                <p id="stats_h" class="text-xs font-bold text-white">0 / 0</p>
+                <p id="stats_s" class="text-xs font-bold text-white">0 / 0</p>
             </div>
-            <div class="stat-card border-l-2 border-red-500">
-                <p class="text-[7px] uppercase text-gray-500">Rondas en Pausa</p>
-                <p id="pausa" class="text-xs font-bold text-white">0</p>
+            <div class="stat-card border-l-2 border-zinc-700">
+                <p class="text-[7px] uppercase text-gray-500">Rondas sin Entrar</p>
+                <p id="rondas_espera" class="text-xs font-bold text-white">0</p>
             </div>
         </div>
 
-        <!-- Panel de Doble Apuesta -->
+        <!-- PANEL DE MICRO-DIVERSIFICACIÓN (60/40) -->
         <div class="grid grid-cols-2 gap-3 mb-8">
-            <div class="panel p-5 text-center border-b-4 border-green-500">
+            <div class="panel p-5 text-center border-b-4 border-green-600/30">
                 <p class="text-[8px] text-green-500 font-bold uppercase mb-1">Apuesta A (60%)</p>
                 <div id="tp_s" class="text-3xl font-bold text-white mb-1">--</div>
-                <p class="text-[7px] text-gray-600 uppercase font-bold">Auto 1.20x</p>
+                <p class="text-[7px] text-gray-600 uppercase font-bold">Auto: 1.20x</p>
             </div>
-            <div class="panel p-5 text-center border-b-4 border-blue-500">
+            <div class="panel p-5 text-center border-b-4 border-blue-600/30">
                 <p class="text-[8px] text-blue-500 font-bold uppercase mb-1">Apuesta B (40%)</p>
                 <div id="tp_e" class="text-3xl font-bold text-white mb-1">--</div>
-                <p class="text-[7px] text-gray-600 uppercase font-bold">Auto 1.50x</p>
+                <p class="text-[7px] text-gray-600 uppercase font-bold">Target IA</p>
             </div>
         </div>
 
@@ -110,14 +123,32 @@
         </button>
 
         <p class="text-[7px] mt-10 text-center text-zinc-600 uppercase leading-relaxed px-4">
-            <b>Métrica QRP v77:</b> Este sistema utiliza un modelo de cadencia obligatoria para reducir el drawdown. 
-            No constituye garantía de resultados.
+            <b>Métrica de Riesgo:</b> Gestión de capital mediante persistencia táctica. <br>
+            No constituye garantía de resultados. Use con responsabilidad.
         </p>
     </div>
+
+    <!-- Sonido de Alerta -->
+    <audio id="alert-sound" src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" preload="auto"></audio>
 
     <script>
         // --- CAMBIAR POR TU URL DE NGROK ---
         const API_URL = "https://cordlike-dylan-unstrenuously.ngrok-free.dev/data";
+        
+        let audioEnabled = false;
+        let lastSugerencia = "";
+        const alertAudio = document.getElementById('alert-sound');
+
+        function toggleAudio() {
+            audioEnabled = !audioEnabled;
+            const btn = document.getElementById('audio-toggle');
+            if(audioEnabled) {
+                btn.className = "btn-audio active";
+                alertAudio.play().catch(e => console.log("Audio interactivo activado"));
+            } else {
+                btn.className = "btn-audio";
+            }
+        }
 
         async function updateDashboard() {
             try {
@@ -128,45 +159,54 @@
                 if (!response.ok) throw new Error('Offline');
                 const d = await response.json();
 
-                // 1. Datos Principales
+                // 1. Mapeo de datos (Sincronizado con servidor.py)
                 document.getElementById('val').innerText = (d.ultimo_valor || 0) + 'x';
-                document.getElementById('prob').innerText = d.confianza || "0%";
+                document.getElementById('prob').innerText = d.estabilidad_contexto || "0%";
                 document.getElementById('sug').innerText = d.sugerencia || "ESPERANDO";
+                document.getElementById('tp_s').innerText = d.tp_seguro || "--";
+                document.getElementById('tp_e').innerText = d.tp_crecimiento || "--";
                 document.getElementById('fase').innerText = d.fase || "MONITOREO";
-                document.getElementById('tp_s').innerText = d.tp_s || "--";
-                document.getElementById('tp_e').innerText = d.tp_e || "--";
+                document.getElementById('rondas_espera').innerText = d.rondas_sin_entrar || 0;
 
-                // 2. Auditoría de Sesión
-                document.getElementById('stats_h').innerText = `${d.wins_hoy} / ${d.trades_hoy}`;
-                document.getElementById('pausa').innerText = d.block_rondas || d.bloqueo_rondas || 0;
-                
-                const wr = d.trades_hoy > 0 ? (d.wins_hoy / d.trades_hoy * 100).toFixed(0) : 0;
+                // 2. Mapeo de Auditoría y WinRate
+                document.getElementById('stats_s').innerText = `${d.wins_hoy} / ${d.trades_hoy}`;
+                const wr = d.trades_hoy > 0 ? (d.wins_hoy / d.trades_hoy * 100).toFixed(1) : 0;
                 document.getElementById('winrate').innerText = wr + "%";
 
-                // 3. Lógica de Colores Visuales
-                const panel = document.getElementById('main-panel');
-                const sugText = d.sugerencia;
-
-                if(sugText.includes("RENTABLE")) {
-                    panel.className = "panel p-6 mb-4 text-center status-ok glow-green";
-                } else if(sugText.includes("ENFRIAMIENTO") || sugText.includes("PAUSA")) {
-                    panel.className = "panel p-6 mb-4 text-center status-stop opacity-90";
-                } else if(sugText.includes("MONITOREO") || sugText.includes("⏳")) {
-                    panel.className = "panel p-6 mb-4 text-center status-warn";
-                } else {
-                    panel.className = "panel p-6 mb-4 text-center";
+                // 3. Lógica de Alerta Sonora
+                if (audioEnabled && d.sugerencia !== lastSugerencia) {
+                    if (d.sugerencia.includes("RENTABLE") || d.sugerencia.includes("TÁCTICA") || d.sugerencia.includes("PREPARACIÓN")) {
+                        alertAudio.play().catch(e => console.log("Audio bloqueado por navegador"));
+                    }
+                    lastSugerencia = d.sugerencia;
                 }
 
-                // LED Verde si hay conexión
-                document.getElementById('led').className = "w-2 h-2 bg-green-500 rounded-full animate-pulse";
+                // 4. Cambios visuales dinámicos (Colores por estado)
+                const panel = document.getElementById('main-panel');
+                const sugText = document.getElementById('sug');
+
+                if(d.sugerencia.includes("RENTABLE")) {
+                    panel.className = "panel p-6 mb-4 text-center status-ok";
+                    sugText.className = "text-xs font-bold uppercase tracking-tighter text-green-500";
+                } else if(d.sugerencia.includes("TÁCTICA")) {
+                    panel.className = "panel p-6 mb-4 text-center status-tactical";
+                    sugText.className = "text-xs font-bold uppercase tracking-tighter text-cyan-400";
+                } else if(d.sugerencia.includes("PREPARACIÓN")) {
+                    panel.className = "panel p-6 mb-4 text-center status-warn";
+                    sugText.className = "text-xs font-bold uppercase tracking-tighter text-yellow-500";
+                } else if(d.sugerencia.includes("🛑") || d.sugerencia.includes("PAUSA")) {
+                    panel.className = "panel p-6 mb-4 text-center status-stop";
+                    sugText.className = "text-xs font-bold uppercase tracking-tighter text-red-500";
+                } else {
+                    panel.className = "panel p-6 mb-4 text-center";
+                    sugText.className = "text-xs font-bold uppercase tracking-tighter text-gray-400";
+                }
 
             } catch (error) {
-                console.error("Fallo de conexión:", error);
-                document.getElementById('led').className = "w-2 h-2 bg-red-600 rounded-full";
+                console.error("Fallo de telemetría:", error);
             }
         }
 
-        // Actualizar cada segundo para precisión táctica
         setInterval(updateDashboard, 1000);
         updateDashboard();
     </script>
