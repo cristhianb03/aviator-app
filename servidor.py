@@ -9,6 +9,7 @@ from sklearn.metrics import precision_score
 import os
 import threading
 import statistics
+from datetime import datetime
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -17,29 +18,27 @@ class Resultado(BaseModel):
     valor: float
     jugadores: int = 0
 
-FILE_DB = 'database_v76_precision.csv'
+FILE_DB = 'database_v80_tactical.csv'
 csv_lock = threading.Lock()
 
-# Memoria Maestra V76.1 - Sincronizada y Blindada
 memoria = {
     "ultimo_valor": 0.0,
     "sugerencia": "⏳ CALIBRANDO",
-    "confianza": "0%",
-    "tp_s": "--", 
-    "tp_e": "--", 
     "fase": "MONITOREO",
-    "wins_hoy": 0,
-    "trades_hoy": 0,
+    "tp_seguro": "--",
+    "tp_crecimiento": "--",
+    "rondas_sin_entrar": 0,
     "bloqueo_rondas": 0,
+    "trades_hoy": 0,
+    "wins_hoy": 0,
     "historial_visual": []
 }
 
-def motor_ia_flow(hist):
+def motor_ia_adaptive(hist):
     if len(hist) < 80: return None
     try:
-        df = pd.DataFrame(hist[::-1], columns=['valor'])
-        # Target estratégico 1.30x para validar ambas salidas
-        df['target'] = (df['valor'].shift(-1) >= 1.30).astype(int)
+        df = pd.DataFrame(hist, columns=['valor'])
+        df['target'] = (df['valor'].shift(-1) >= 1.25).astype(int)
         df['v1'] = df['valor'].shift(1)
         df['v2'] = df['valor'].shift(2)
         df['std'] = df['valor'].rolling(5).std()
@@ -48,9 +47,13 @@ def motor_ia_flow(hist):
         X = df[['v1', 'v2', 'std']]
         model = RandomForestClassifier(n_estimators=50, max_depth=3, random_state=42).fit(X, df['target'])
         
-        std_act = statistics.stdev(hist[:5])
-        prob = model.predict_proba(np.array([[hist[0], hist[1], std_act]]))[0][1]
-        return round(prob * 100, 2), round(std_act, 2)
+        std_act = statistics.stdev(hist[-5:])
+        prob = model.predict_proba(np.array([[hist[-1], hist[-2], std_act]]))[0][1]
+        
+        # Suelo de Baseline para evitar mercados basura
+        baseline = max(48, df['target'].mean() * 100)
+        
+        return round(prob * 100, 2), round(std_act, 2), round(baseline, 2)
     except: return None
 
 @app.get("/data")
@@ -61,66 +64,84 @@ async def recibir_resultado(res: Resultado):
     v = res.valor
     if v == memoria["ultimo_valor"]: return {"status": "skip"}
 
-    # 🔁 1. DECREMENTO DE BLOQUEO AL INICIO (Fix Temporización)
+    # 🔁 Decremento del bloqueo al inicio
     if memoria["bloqueo_rondas"] > 0:
         memoria["bloqueo_rondas"] -= 1
 
-    # 🔍 2. AUDITORÍA UNIFICADA (TP_S y TP_E)
-    hubo_senal_anterior = memoria["tp_s"] != "--" or memoria["tp_e"] != "--"
-    
-    if hubo_senal_anterior:
+    # Auditoría de la ronda anterior
+    hubo_senal_previa = memoria["tp_seguro"] != "--" or memoria["tp_crecimiento"] != "--"
+    if hubo_senal_previa:
         memoria["trades_hoy"] += 1
-        if v >= 1.20:
+        if v >= 1.20: 
             memoria["wins_hoy"] += 1
+            memoria["rondas_sin_entrar"] = 10 # Reset amplio tras éxito
         else:
-            # FALLO: Castigo real de 4 rondas (se verá como 3 en el siguiente ciclo)
             memoria["bloqueo_rondas"] = 4 
+            memoria["rondas_sin_entrar"] = 0
 
-    # Actualizar telemetría
     memoria["ultimo_valor"] = v
     memoria["historial_visual"].insert(0, v)
     if len(memoria["historial_visual"]) > 15: memoria["historial_visual"].pop()
     
-    # Registro seguro en CSV
     with csv_lock:
         with open(FILE_DB, 'a') as f: f.write(f"{v},{res.jugadores}\n")
 
-    # --- 3. CARGA DE DATOS (Fix Variable Error) ---
     try:
         db = pd.read_csv(FILE_DB, names=['valor', 'jugadores'])
         total_vals = db.tail(250)['valor'].tolist()
-    except: 
-        total_vals = [] # Corregido: antes decía total_hist
+    except: total_vals = []
 
-    res_ia = motor_ia_flow(total_vals)
+    res_ia = motor_ia_adaptive(total_vals)
     
     if res_ia:
-        prob, std = res_ia
-        memoria["confianza"] = f"{round(prob)}%"
-
-        # --- 4. LÓGICA DE SEÑAL BLINDADA ---
+        prob, std, baseline = res_ia
+        memoria["estabilidad_contexto"] = f"{round(prob)}%"
+        bajos_recientes = len([x for x in total_vals[-5:] if x < 1.40])
         
+        # --- LÓGICA DE ESTADOS V80 (ORDEN CRÍTICO) ---
+        
+        # 1. Bloqueo duro
         if memoria["bloqueo_rondas"] > 0:
             memoria["sugerencia"] = f"🛑 PAUSA ({memoria['bloqueo_rondas']} R.)"
-            memoria["tp_s"] = "--"; memoria["tp_e"] = "--"
-            memoria["fase"] = "PRESERVACIÓN"
-        
-        # 🟢 CAPA BASE (1.20x): Prob >= 52% + Filtro Varianza
+            memoria["tp_seguro"] = "--"; memoria["tp_crecimiento"] = "--"
+            memoria["fase"] = "ENFRIAMIENTO"
+
+        # 2. Soft Reset post-bloqueo
+        elif memoria["rondas_sin_entrar"] < 2:
+            memoria["sugerencia"] = "⏳ REARMANDO CONTEXTO"
+            memoria["tp_seguro"] = "--"; memoria["tp_crecimiento"] = "--"
+            memoria["fase"] = "ESTABILIZANDO"
+            memoria["rondas_sin_entrar"] += 1
+
+        # 3. Escenario Ideal (Verde)
         elif prob >= 52 and std < 3.2:
             memoria["sugerencia"] = "✅ CONTEXTO RENTABLE"
-            memoria["tp_s"] = "1.20x"
-            
-            # 🔴 CAPA OPTIMIZACIÓN (1.50x): Prob >= 55% + Estabilidad estricta
-            if prob >= 55 and std < 2.8:
-                memoria["tp_e"] = "1.50x"
-                memoria["fase"] = "DUAL ACTIVE"
-            else:
-                memoria["tp_e"] = "--"
-                memoria["fase"] = "SINGLE CORE"
+            memoria["tp_seguro"] = "1.20x"
+            memoria["tp_crecimiento"] = "1.50x" if (std < 2.8 and prob >= 55) else "--"
+            memoria["fase"] = "ZONA VALIDADA"
+            memoria["rondas_sin_entrar"] = 5
+
+        # 4. Anti-Silencio (Acumulación)
+        elif bajos_recientes >= 4 and prob >= (baseline - 5):
+            memoria["sugerencia"] = "🟡 PREPARACIÓN ACTIVA"
+            memoria["tp_seguro"] = "1.20x"
+            memoria["tp_crecimiento"] = "--"
+            memoria["fase"] = "RECUPERACIÓN"
+            memoria["rondas_sin_entrar"] = 5
+
+        # 🎯 5. CLÁUSULA DE PERSISTENCIA (Añadida aquí)
+        elif memoria["rondas_sin_entrar"] >= 6 and prob >= 50:
+            memoria["sugerencia"] = "🟢 ENTRADA TÁCTICA"
+            memoria["tp_seguro"] = "1.20x"
+            memoria["tp_crecimiento"] = "--"
+            memoria["fase"] = "PERSISTENCIA"
+            memoria["rondas_sin_entrar"] = 3 # Reset parcial para mantener ritmo
+
         else:
-            memoria["sugerencia"] = "⏳ ESCANEANDO"
-            memoria["tp_s"] = "--"; memoria["tp_e"] = "--"
-            memoria["fase"] = "ALTA VARIANZA" if std >= 3.2 else "BAJA CONVERGENCIA"
+            memoria["sugerencia"] = "📡 ESCANEANDO"
+            memoria["tp_seguro"] = "--"; memoria["tp_crecimiento"] = "--"
+            memoria["fase"] = "MONITOREO"
+            memoria["rondas_sin_entrar"] += 1
             
     return {"status": "ok"}
 
