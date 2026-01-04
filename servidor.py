@@ -17,7 +17,7 @@ class Resultado(BaseModel):
     valor: float
     jugadores: int = 0
 
-FILE_DB = 'database_v82_final.csv'
+FILE_DB = 'database_v83_final.csv'
 csv_lock = threading.Lock()
 
 memoria = {
@@ -29,7 +29,8 @@ memoria = {
     "fase": "MONITOREO",
     "rondas_sin_entrar": 0,
     "bloqueo_rondas": 0,
-    "contexto_vivo": 0,    
+    "contexto_vivo": 0,
+    "trade_activo": False, 
     "trades_hoy": 0,
     "wins_hoy": 0,
     "historial_visual": []
@@ -43,16 +44,11 @@ def motor_ia_adaptive(hist):
         df['v1'] = df['valor'].shift(1); df['v2'] = df['valor'].shift(2)
         df['std'] = df['valor'].rolling(5).std()
         df = df.dropna()
-        
         X = df[['v1', 'v2', 'std']]
         model = RandomForestClassifier(n_estimators=50, max_depth=3, random_state=42).fit(X, df['target'])
-        
         std_act = statistics.stdev(hist[-5:])
         prob = model.predict_proba(np.array([[hist[-1], hist[-2], std_act]]))[0][1]
-        
-        # Suelo de Baseline para evitar mercados basura
         baseline = max(48, df['target'].mean() * 100)
-        
         return round(prob * 100, 2), round(std_act, 2), round(baseline, 2)
     except: return None
 
@@ -64,23 +60,21 @@ async def recibir_resultado(res: Resultado):
     v = res.valor
     if v == memoria["ultimo_valor"]: return {"status": "skip"}
 
-    # 🔁 Decremento de bloqueo al inicio real de ronda
-    if memoria["bloqueo_rondas"] > 0:
-        memoria["bloqueo_rondas"] -= 1
-
-    # Auditoría real de la señal anterior
-    hubo_senal_previa = memoria["tp_s"] != "--" or memoria["tp_e"] != "--"
-    if hubo_senal_previa:
+    # 1️⃣ AUDITORÍA (Se ejecuta con el estado de la ronda que acaba de terminar)
+    if memoria["trade_activo"]:
         memoria["trades_hoy"] += 1
         if v >= 1.20: 
             memoria["wins_hoy"] += 1
             memoria["bloqueo_rondas"] = 0 
         else:
             memoria["bloqueo_rondas"] = 4 
-            memoria["rondas_sin_entrar"] = 0
-            memoria["contexto_vivo"] = 0 
+            memoria["contexto_vivo"] = 0
 
-    # Actualización de historial
+    # 2️⃣ DECREMENTO DE BLOQUEO (Inicio de la nueva ronda)
+    if memoria["bloqueo_rondas"] > 0:
+        memoria["bloqueo_rondas"] -= 1
+
+    # Actualización de datos
     memoria["ultimo_valor"] = v
     memoria["historial_visual"].insert(0, v)
     if len(memoria["historial_visual"]) > 15: memoria["historial_visual"].pop()
@@ -91,8 +85,7 @@ async def recibir_resultado(res: Resultado):
     try:
         db = pd.read_csv(FILE_DB, names=['valor', 'jugadores'])
         total_vals = db.tail(250)['valor'].tolist()
-    except: 
-        total_vals = [] 
+    except: total_vals = []
 
     res_ia = motor_ia_adaptive(total_vals)
     
@@ -101,38 +94,43 @@ async def recibir_resultado(res: Resultado):
         memoria["confianza"] = f"{round(prob)}%"
         bajos_recientes = len([x for x in total_vals[-5:] if x < 1.40])
         
-        # --- 🧠 EVALUACIÓN DE CONTEXTO ---
+        # --- EVALUACIÓN DE CONTEXTO ---
         contexto_rentable = (prob >= 52 and std < 3.2)
         preparacion_activa = (bajos_recientes >= 4 and prob >= (baseline - 5))
-        
-        # 🎯 AJUSTE DE ALTA SENSIBILIDAD (PERSISTENCIA REPOTENCIADA)
         persistencia = (memoria["rondas_sin_entrar"] >= 4 and prob >= 48)
 
-        # --- 🎯 LÓGICA DE ACCIÓN (V82.1) ---
-        if contexto_rentable or preparacion_activa or persistencia:
+        # --- 🎯 3️⃣ LÓGICA DE ESTADOS PERSISTENTES ---
+        
+        if memoria["bloqueo_rondas"] > 0:
+            memoria["tp_s"] = "--"; memoria["tp_e"] = "--"
+            memoria["trade_activo"] = False
+            memoria["sugerencia"] = f"🛑 PAUSA ({memoria['bloqueo_rondas']} R.)"
+            memoria["fase"] = "ENFRIAMIENTO"
+
+        elif contexto_rentable or preparacion_activa or persistencia:
             if memoria["contexto_vivo"] == 0:
                 memoria["contexto_vivo"] = 3
             
             memoria["tp_s"] = "1.20x"
             memoria["tp_e"] = "1.50x" if (prob >= 54 and std < 2.8) else "--"
+            memoria["trade_activo"] = True 
             memoria["rondas_sin_entrar"] = 0
-
-            if memoria["bloqueo_rondas"] > 0:
-                memoria["sugerencia"] = "⚠️ CONTEXTO OK (RIESGO ALTO)"
-                memoria["fase"] = "REDUCIR STAKE"
-            else:
-                memoria["sugerencia"] = "✅ CONTEXTO RENTABLE"
-                memoria["fase"] = "ZONA VALIDADA"
+            memoria["sugerencia"] = "✅ CONTEXTO RENTABLE"
+            memoria["fase"] = "ZONA VALIDADA"
+            
         else:
-            # 🔄 MODO OBSERVACIÓN (DECAY)
+            # 🔄 4️⃣ MODO OBSERVACIÓN (Mantiene la señal sin resetear al inicio)
             if memoria["contexto_vivo"] > 0:
                 memoria["contexto_vivo"] -= 1
                 memoria["tp_s"] = "1.20x"
                 memoria["tp_e"] = "1.50x" if prob >= 54 else "--"
+                memoria["trade_activo"] = False # Solo informativo, no audita fallos
                 memoria["sugerencia"] = "🟡 CONTEXTO EN OBSERVACIÓN"
                 memoria["fase"] = f"MEMORIA ({memoria['contexto_vivo']})"
             else:
+                # ❌ ÚNICO PUNTO DE LIMPIEZA: Cuando realmente no hay contexto ni memoria
                 memoria["tp_s"] = "--"; memoria["tp_e"] = "--"
+                memoria["trade_activo"] = False
                 memoria["sugerencia"] = "📡 ESCANEANDO"
                 memoria["fase"] = "MONITOREO"
                 memoria["rondas_sin_entrar"] += 1
