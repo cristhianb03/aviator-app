@@ -8,6 +8,7 @@ from sklearn.metrics import precision_score
 import os
 import threading
 import statistics
+from datetime import datetime
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -16,10 +17,9 @@ class Resultado(BaseModel):
     valor: float
     jugadores: int = 0
 
-FILE_DB = 'database_v83_final.csv'
+FILE_DB = 'database_v82_final.csv'
 csv_lock = threading.Lock()
 
-# Memoria Maestra V83.1 - Lógica de Control Validada
 memoria = {
     "ultimo_valor": 0.0,
     "sugerencia": "⏳ CALIBRANDO",
@@ -29,7 +29,8 @@ memoria = {
     "fase": "MONITOREO",
     "rondas_sin_entrar": 0,
     "bloqueo_rondas": 0,
-    "trade_confirmado": False,
+    "senal_activa": False,  
+    "senal_vida": 0,
     "trades_hoy": 0,
     "wins_hoy": 0,
     "historial_visual": []
@@ -54,33 +55,35 @@ def motor_ia_adaptive(hist):
 @app.get("/data")
 async def get_data(): return memoria
 
-@app.get("/confirmar-trade")
-async def confirmar_trade():
-    memoria["trade_confirmado"] = True
-    return {"status": "Trade registrado"}
-
 @app.post("/nuevo-resultado")
 async def recibir_resultado(res: Resultado):
     v = res.valor
     if v == memoria["ultimo_valor"]: return {"status": "skip"}
 
-    # --- 1️⃣ AUDITORÍA MANUAL Y GESTIÓN DE BLOQUEO ---
-    just_lost = False
-    if memoria["trade_confirmado"]:
-        memoria["trades_hoy"] += 1
-        if v >= 1.20: 
-            memoria["wins_hoy"] += 1
-            memoria["bloqueo_rondas"] = 0 
-        else:
-            memoria["bloqueo_rondas"] = 4 # Penalidad
-            just_lost = True # Flag para evitar el decremento inmediato
-        memoria["trade_confirmado"] = False
-
-    # 2️⃣ DECREMENTO INTELIGENTE (Mejora sugerida)
-    # Solo descuenta si NO acabamos de perder en este mismo instante
-    if memoria["bloqueo_rondas"] > 0 and not just_lost:
+    # 🔁 1. Decremento del bloqueo al inicio real de ronda
+    if memoria["bloqueo_rondas"] > 0:
         memoria["bloqueo_rondas"] -= 1
 
+    # 📊 2. AUDITORÍA LÓGICA (Basada en senal_activa)
+    hubo_senal_previa = memoria["senal_activa"]
+    
+    if hubo_senal_previa:
+        # Solo auditamos si NO estamos en una ronda de bloqueo (para no duplicar trades en el winrate)
+        if memoria["bloqueo_rondas"] == 0:
+            memoria["trades_hoy"] += 1
+            if v >= 1.20: 
+                memoria["wins_hoy"] += 1
+                memoria["senal_activa"] = False # Éxito: apagado limpio
+                memoria["senal_vida"] = 0
+            else:
+                # Fallo: activamos bloqueo pero la señal PERSISTE visualmente
+                memoria["bloqueo_rondas"] = 4 
+                memoria["rondas_sin_entrar"] = 0
+
+    # 🚩 Bandera para controlar la vida de la señal en esta ronda específica
+    senal_activada_esta_ronda = False
+
+    # Actualización de historial
     memoria["ultimo_valor"] = v
     memoria["historial_visual"].insert(0, v)
     if len(memoria["historial_visual"]) > 15: memoria["historial_visual"].pop()
@@ -91,7 +94,7 @@ async def recibir_resultado(res: Resultado):
     try:
         db = pd.read_csv(FILE_DB, names=['valor', 'jugadores'])
         total_vals = db.tail(250)['valor'].tolist()
-    except: total_vals = []
+    except: total_vals = [] 
 
     res_ia = motor_ia_adaptive(total_vals)
     
@@ -100,22 +103,38 @@ async def recibir_resultado(res: Resultado):
         memoria["confianza"] = f"{round(prob)}%"
         bajos_recientes = len([x for x in total_vals[-5:] if x < 1.40])
         
-        # Evaluación de Contexto
+        # --- 🧠 3. EVALUACIÓN DE CONTEXTO ---
         contexto_rentable = (prob >= 52 and std < 3.2)
         preparacion_activa = (bajos_recientes >= 4 and prob >= (baseline - 5))
-        persistencia = (memoria["rondas_sin_entrar"] >= 4 and prob >= 48)
+        persistencia_ia = (memoria["rondas_sin_entrar"] >= 4 and prob >= 48)
 
-        if contexto_rentable or preparacion_activa or persistencia:
+        # --- 🎯 4. ACTIVACIÓN / RECARGA DE SEÑAL ---
+        if (contexto_rentable or preparacion_activa or persistencia_ia) and memoria["bloqueo_rondas"] == 0:
+            if not memoria["senal_activa"]:
+                memoria["senal_activa"] = True
+                memoria["senal_vida"] = 2 
+                senal_activada_esta_ronda = True
+                memoria["rondas_sin_entrar"] = 0
+
+        # --- 🖥️ 5. LÓGICA DE SALIDA VISUAL (ESTADOS) ---
+        if memoria["senal_activa"]:
             memoria["tp_s"] = "1.20x"
-            memoria["tp_e"] = "1.50x" if (prob >= 54 and std < 2.8) else "--"
-            memoria["rondas_sin_entrar"] = 0
-
+            memoria["tp_e"] = "1.50x" if prob >= 54 else "--"
+            
             if memoria["bloqueo_rondas"] > 0:
-                memoria["sugerencia"] = f"⚠️ RIESGO ALTO (ESPERAR {memoria['bloqueo_rondas']} R.)"
-                memoria["fase"] = "GESTIÓN DE PÉRDIDAS"
+                memoria["sugerencia"] = f"⚠️ RIESGO ALTO (BLOQUEO {memoria['bloqueo_rondas']} R.)"
+                memoria["fase"] = "REDUCIR STAKE"
             else:
                 memoria["sugerencia"] = "✅ CONTEXTO RENTABLE"
                 memoria["fase"] = "ZONA VALIDADA"
+
+            # ❌ CORRECCIÓN FINAL 1: No consumas vida si acabas de nacer O si estás bloqueado
+            if not senal_activada_esta_ronda and memoria["bloqueo_rondas"] == 0:
+                memoria["senal_vida"] -= 1
+            
+            # ❌ CORRECCIÓN FINAL 2: Apagado limpio en el límite exacto
+            if memoria["senal_vida"] <= 0 and memoria["bloqueo_rondas"] == 0:
+                memoria["senal_activa"] = False
         else:
             memoria["tp_s"] = "--"; memoria["tp_e"] = "--"
             memoria["sugerencia"] = "📡 ESCANEANDO"
