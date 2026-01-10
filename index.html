@@ -3,25 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>The Gatekeeper V95.1 - Live Gate</title>
+    <title>The Gatekeeper Pro - V98</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@700&display=swap');
+        body { font-family: 'JetBrains+Mono', monospace; background: #050608; color: white; }
         
-        body { 
-            font-family: 'JetBrains+Mono', monospace; 
-            background: #050608; 
-            color: white; 
-            overflow: hidden;
-        }
-
-        /* Círculo de Decisión Central */
         .status-box { 
             border-radius: 50%; 
             width: 220px; 
             height: 220px; 
             display: flex; 
-            flex-direction: column;
             align-items: center; 
             justify-content: center; 
             margin: 30px auto; 
@@ -30,133 +22,117 @@
         }
 
         .bg-ok { 
-            background: rgba(34, 197, 94, 0.05); 
+            background: rgba(34, 197, 94, 0.1); 
             border-color: #22c55e; 
             color: #22c55e; 
-            box-shadow: 0 0 50px rgba(34, 197, 94, 0.2); 
+            box-shadow: 0 0 40px rgba(34, 197, 94, 0.3); 
         }
 
         .bg-stop { 
-            background: rgba(239, 68, 68, 0.05); 
+            background: rgba(239, 68, 68, 0.1); 
             border-color: #ef4444; 
             color: #ef4444; 
-            box-shadow: 0 0 30px rgba(239, 68, 68, 0.1);
         }
 
-        .btn-audio { 
-            background: #1e293b; 
-            color: white; 
-            padding: 8px; 
-            border-radius: 50%; 
-            border: 1px solid #334155; 
+        .glass-card {
+            background: rgba(20, 24, 35, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
         }
-        .btn-audio.active { background: #06b6d4; border-color: #22d3ee; animation: pulse-audio 2s infinite; }
-        @keyframes pulse-audio { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
     </style>
 </head>
 <body class="flex flex-col items-center p-6 min-h-screen">
 
     <div class="w-full max-w-sm text-center">
-        <!-- BARRA SUPERIOR -->
+        <!-- Header -->
         <header class="flex justify-between items-center mb-10 opacity-60">
-            <div class="text-left">
-                <span class="text-[9px] font-bold tracking-widest uppercase block">Sentinel Protocol</span>
-                <span class="text-[11px] font-black text-blue-500">LIVE GATE V95.1</span>
+            <span class="text-[9px] font-bold tracking-widest uppercase">Sentinel Protocol V98</span>
+            <div class="flex items-center gap-1">
+                <div id="led" class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
+                <span class="text-[9px] font-bold">GCP LIVE</span>
             </div>
-            <button id="audio-toggle" onclick="toggleAudio()" class="btn-audio">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15.536a5 5 0 001.414 1.414m2.828-9.9a9 9 0 011.414-1.414M11 5L8.8 7H5v10h3.8l2.2 2V5z" />
-                </svg>
-            </button>
         </header>
         
-        <p class="text-[10px] text-gray-600 uppercase mb-2 font-bold tracking-widest">Última Ronda</p>
-        <div id="val" class="text-6xl font-bold mb-8 tracking-tighter">--</div>
+        <p class="text-[10px] text-gray-500 uppercase mb-2 font-bold tracking-widest">Último Resultado</p>
+        <div id="val" class="text-6xl font-bold mb-8">--</div>
 
-        <!-- INDICADOR CENTRAL GO/STOP -->
+        <!-- Círculo de Decisión IA -->
         <div id="circle" class="status-box bg-stop">
-            <div id="state-text" class="text-5xl font-black italic tracking-tighter">STOP</div>
-            <div id="prob-small" class="text-[10px] mt-2 font-bold opacity-60">IA: 0%</div>
+            <div id="state" class="text-5xl font-black italic tracking-tighter">STOP</div>
         </div>
 
-        <!-- CUADRO DE FASE TÉCNICA -->
-        <div class="bg-zinc-900/80 p-5 rounded-3xl border border-white/5 mb-8 shadow-xl">
-            <p id="sug" class="text-sm font-bold uppercase mb-1">CALIBRANDO...</p>
-            <p id="fase" class="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Analizando Varianza</p>
+        <!-- Caja de Estado Detallado -->
+        <div class="glass-card p-5 rounded-3xl mb-8 shadow-xl">
+            <p id="sug" class="text-sm font-bold uppercase mb-1">ANALIZANDO...</p>
+            <p id="fase" class="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Sincronizando Grafo</p>
         </div>
 
-        <!-- ESTADÍSTICAS DE SESIÓN -->
+        <!-- Estadísticas de Sesión -->
         <div class="grid grid-cols-2 gap-4">
             <div class="bg-zinc-900/40 p-4 rounded-2xl border border-white/5">
-                <p class="text-[8px] text-gray-500 uppercase font-bold mb-1">Intentos</p>
-                <p id="intentos" class="text-xl font-bold">0 / 3</p>
+                <p class="text-[8px] text-gray-500 font-bold uppercase mb-1">Confianza 1.50x</p>
+                <p id="prob" class="text-xl font-bold text-blue-400">0%</p>
             </div>
             <div class="bg-zinc-900/40 p-4 rounded-2xl border border-white/5">
-                <p class="text-[8px] text-gray-500 uppercase font-bold mb-1">Salida Fija</p>
-                <p class="text-xl font-bold text-blue-400">1.20x</p>
+                <p class="text-[8px] text-gray-500 font-bold uppercase mb-1">Intentos Hoy</p>
+                <p id="intentos" class="text-xl font-bold">0 / 5</p>
             </div>
         </div>
 
-        <button onclick="location.reload()" class="w-full py-5 bg-white text-black font-black text-[10px] uppercase tracking-widest rounded-2xl mt-12 active:scale-95 transition-all">
-            Sincronizar Telemetría
+        <button onclick="location.reload()" class="w-full mt-10 py-5 bg-white text-black font-black text-[10px] uppercase tracking-widest rounded-2xl active:scale-95 transition-all shadow-xl">
+            Actualizar Telemetría
         </button>
+
+        <p class="text-[7px] text-zinc-700 uppercase mt-12 leading-relaxed">
+            IA entrenada para objetivo mínimo de 1.50x.<br> 
+            La gestión de capital es responsabilidad del operador.
+        </p>
     </div>
 
-    <!-- Sonido de Alerta -->
-    <audio id="alert-sound" src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" preload="auto"></audio>
-
     <script>
-        // --- PEGA TU URL DE NGROK AQUÍ ---
+        // PEGA TU URL DE NGROK ACTUAL AQUÍ
         const API_URL = "https://cordlike-dylan-unstrenuously.ngrok-free.dev/data";
-        
-        let audioEnabled = false;
-        let lastState = "STOP";
-        const alertAudio = document.getElementById('alert-sound');
 
-        function toggleAudio() {
-            audioEnabled = !audioEnabled;
-            document.getElementById('audio-toggle').classList.toggle('active');
-            if(audioEnabled) alertAudio.play().catch(e => {});
-        }
-
-        async function update() {
+        async function updateDashboard() {
             try {
                 const response = await fetch(API_URL, {
                     headers: { "ngrok-skip-browser-warning": "69420" }
                 });
+                
+                if (!response.ok) throw new Error('Servidor fuera de línea');
                 const d = await response.json();
 
-                // 1. Datos base
+                // Actualizar Telemetría
                 document.getElementById('val').innerText = (d.ultimo_valor || 0) + 'x';
                 document.getElementById('sug').innerText = d.sugerencia;
                 document.getElementById('fase').innerText = d.fase;
-                document.getElementById('intentos').innerText = d.intentos_sesion + " / 3";
-                document.getElementById('prob-small').innerText = "IA: " + (d.confianza || "0%");
+                document.getElementById('prob').innerText = d.confianza;
+                document.getElementById('intentos').innerText = d.intentos_sesion + " / 5";
 
-                // 2. Lógica del Círculo (GO/STOP)
                 const circle = document.getElementById('circle');
-                const stateText = document.getElementById('state-text');
-                const isGo = d.estado.includes("OK");
+                const stateText = document.getElementById('state');
+                const led = document.getElementById('led');
 
-                if(isGo) {
+                // Cambios Visuales por Estado
+                if(d.estado.includes("OK")) {
                     circle.className = "status-box bg-ok";
                     stateText.innerText = "GO";
-                    // Alerta sonora si cambia a GO
-                    if(audioEnabled && lastState === "STOP") alertAudio.play().catch(e => {});
-                    lastState = "GO";
                 } else {
                     circle.className = "status-box bg-stop";
                     stateText.innerText = "STOP";
-                    lastState = "STOP";
                 }
 
+                led.className = "w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse";
+
             } catch (error) {
-                console.error("Fallo de telemetría:", error);
+                console.error("Error de conexión:", error);
+                document.getElementById('led').className = "w-1.5 h-1.5 bg-red-600 rounded-full";
+                document.getElementById('sug').innerText = "⚠️ RECONECTANDO...";
             }
         }
 
-        setInterval(update, 1000);
-        update();
+        setInterval(updateDashboard, 1000);
+        updateDashboard();
     </script>
 </body>
 </html>
