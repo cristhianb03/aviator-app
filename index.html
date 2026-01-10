@@ -3,49 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Apollo QRP v82.5 - Absolute Inertia</title>
+    <title>The Gatekeeper V95.1 - Live Gate</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@700&display=swap');
         
         body { 
             font-family: 'JetBrains+Mono', monospace; 
-            background: #020406; 
-            color: #8a99ae; 
-            overflow-x: hidden;
+            background: #050608; 
+            color: white; 
+            overflow: hidden;
         }
 
-        .panel { 
-            background: #0d1117; 
-            border: 1px solid #1f2937; 
-            border-radius: 16px; 
-            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); 
+        /* Círculo de Decisión Central */
+        .status-box { 
+            border-radius: 50%; 
+            width: 220px; 
+            height: 220px; 
+            display: flex; 
+            flex-direction: column;
+            align-items: center; 
+            justify-content: center; 
+            margin: 30px auto; 
+            border: 6px solid #1a1c23; 
+            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1); 
         }
 
-        /* --- ESTADOS DE COLOR V82.5 --- */
-        .status-ok { border-color: #10b981 !important; color: #10b981; box-shadow: 0 0 20px rgba(16, 185, 129, 0.1); }
-        
-        /* Efecto de Alerta para Riesgo Alto */
-        .status-risk { 
-            border-color: #f97316 !important; 
-            color: #f97316; 
-            animation: pulse-risk 1.5s infinite; 
+        .bg-ok { 
+            background: rgba(34, 197, 94, 0.05); 
+            border-color: #22c55e; 
+            color: #22c55e; 
+            box-shadow: 0 0 50px rgba(34, 197, 94, 0.2); 
         }
-        
-        .status-stop { border-color: #ef4444 !important; color: #ef4444; }
 
-        .stat-card { background: #111827; border: 1px solid #1f2937; padding: 12px; border-radius: 12px; }
-
-        @keyframes pulse-risk {
-            0% { box-shadow: 0 0 0px rgba(249, 115, 22, 0.2); border-color: #f97316; }
-            50% { box-shadow: 0 0 25px rgba(249, 115, 22, 0.4); border-color: #7c2d12; }
-            100% { box-shadow: 0 0 0px rgba(249, 115, 22, 0.2); border-color: #f97316; }
+        .bg-stop { 
+            background: rgba(239, 68, 68, 0.05); 
+            border-color: #ef4444; 
+            color: #ef4444; 
+            box-shadow: 0 0 30px rgba(239, 68, 68, 0.1);
         }
 
         .btn-audio { 
             background: #1e293b; 
             color: white; 
-            padding: 10px; 
+            padding: 8px; 
             border-radius: 50%; 
             border: 1px solid #334155; 
         }
@@ -53,160 +54,109 @@
         @keyframes pulse-audio { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
     </style>
 </head>
-<body class="p-4 flex flex-col items-center min-h-screen">
+<body class="flex flex-col items-center p-6 min-h-screen">
 
-    <div class="w-full max-w-md">
+    <div class="w-full max-w-sm text-center">
         <!-- BARRA SUPERIOR -->
-        <div class="flex justify-between items-center mb-6">
-            <div>
-                <h1 class="text-xs font-bold text-white uppercase tracking-tighter">SENTINEL<span class="text-blue-500">QRP v82.5</span></h1>
-                <p id="fase" class="text-[7px] text-gray-500 uppercase tracking-widest font-bold text-blue-400">CARGANDO...</p>
+        <header class="flex justify-between items-center mb-10 opacity-60">
+            <div class="text-left">
+                <span class="text-[9px] font-bold tracking-widest uppercase block">Sentinel Protocol</span>
+                <span class="text-[11px] font-black text-blue-500">LIVE GATE V95.1</span>
             </div>
-            <div class="flex items-center gap-3">
-                <button id="audio-toggle" onclick="toggleAudio()" class="btn-audio">
-                    <svg id="audio-icon" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15.536a5 5 0 001.414 1.414m2.828-9.9a9 9 0 011.414-1.414M11 5L8.8 7H5v10h3.8l2.2 2V5z" />
-                    </svg>
-                </button>
+            <button id="audio-toggle" onclick="toggleAudio()" class="btn-audio">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15.536a5 5 0 001.414 1.414m2.828-9.9a9 9 0 011.414-1.414M11 5L8.8 7H5v10h3.8l2.2 2V5z" />
+                </svg>
+            </button>
+        </header>
+        
+        <p class="text-[10px] text-gray-600 uppercase mb-2 font-bold tracking-widest">Última Ronda</p>
+        <div id="val" class="text-6xl font-bold mb-8 tracking-tighter">--</div>
+
+        <!-- INDICADOR CENTRAL GO/STOP -->
+        <div id="circle" class="status-box bg-stop">
+            <div id="state-text" class="text-5xl font-black italic tracking-tighter">STOP</div>
+            <div id="prob-small" class="text-[10px] mt-2 font-bold opacity-60">IA: 0%</div>
+        </div>
+
+        <!-- CUADRO DE FASE TÉCNICA -->
+        <div class="bg-zinc-900/80 p-5 rounded-3xl border border-white/5 mb-8 shadow-xl">
+            <p id="sug" class="text-sm font-bold uppercase mb-1">CALIBRANDO...</p>
+            <p id="fase" class="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Analizando Varianza</p>
+        </div>
+
+        <!-- ESTADÍSTICAS DE SESIÓN -->
+        <div class="grid grid-cols-2 gap-4">
+            <div class="bg-zinc-900/40 p-4 rounded-2xl border border-white/5">
+                <p class="text-[8px] text-gray-500 uppercase font-bold mb-1">Intentos</p>
+                <p id="intentos" class="text-xl font-bold">0 / 3</p>
+            </div>
+            <div class="bg-zinc-900/40 p-4 rounded-2xl border border-white/5">
+                <p class="text-[8px] text-gray-500 uppercase font-bold mb-1">Salida Fija</p>
+                <p class="text-xl font-bold text-blue-400">1.20x</p>
             </div>
         </div>
 
-        <!-- MONITOR PRINCIPAL -->
-        <div id="main-panel" class="panel p-6 mb-4 text-center">
-            <p class="text-[9px] uppercase tracking-widest text-gray-600 mb-2">Evaluación de Varianza</p>
-            <div id="val" class="text-7xl font-bold text-white mb-6 tracking-tighter">--</div>
-            
-            <div id="box" class="bg-zinc-950 rounded-lg p-4 border border-zinc-900 mb-4 text-center">
-                <p id="sug" class="text-xs font-bold uppercase tracking-tighter text-gray-400">Sincronizando...</p>
-            </div>
-
-            <div class="grid grid-cols-2 gap-3">
-                <div class="stat-card">
-                    <p class="text-[7px] uppercase text-gray-500 mb-1">Confianza IA</p>
-                    <p id="prob" class="text-lg font-bold text-blue-400">0%</p>
-                </div>
-                <div class="stat-card">
-                    <p class="text-[7px] uppercase text-gray-500 mb-1">Win Rate Sesión</p>
-                    <p id="winrate" class="text-lg font-bold text-green-500">0%</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- AUDITORÍA DE RENDIMIENTO -->
-        <div class="grid grid-cols-2 gap-3 mb-4">
-            <div class="stat-card border-l-2 border-zinc-700">
-                <p class="text-[7px] uppercase text-gray-500">Aciertos / Operaciones</p>
-                <p id="stats_s" class="text-xs font-bold text-white">0 / 0</p>
-            </div>
-            <div class="stat-card border-l-2 border-zinc-700">
-                <p class="text-[7px] uppercase text-gray-500">Bloqueo Activo</p>
-                <p id="bloqueo" class="text-xs font-bold text-white">0 RONDAS</p>
-            </div>
-        </div>
-
-        <!-- PANEL DE MICRO-DIVERSIFICACIÓN (60/40) -->
-        <div class="grid grid-cols-2 gap-3 mb-8">
-            <div class="panel p-5 text-center border-b-4 border-green-500">
-                <p class="text-[8px] text-green-500 font-bold uppercase mb-1">Caja A (60%)</p>
-                <div id="tp_s" class="text-3xl font-bold text-white mb-1">--</div>
-                <p class="text-[7px] text-gray-600 uppercase font-bold">Auto: 1.20x</p>
-            </div>
-            <div class="panel p-5 text-center border-b-4 border-blue-500">
-                <p class="text-[8px] text-blue-500 font-bold uppercase mb-1">Caja B (40%)</p>
-                <div id="tp_e" class="text-3xl font-bold text-white mb-1">--</div>
-                <p class="text-[7px] text-gray-600 uppercase font-bold">Target: 1.50x</p>
-            </div>
-        </div>
-
-        <button onclick="location.reload()" class="w-full py-4 bg-white text-black font-bold text-[10px] uppercase tracking-[0.3em] rounded-xl active:scale-95 transition-all shadow-xl">
-            Reiniciar Telemetría
+        <button onclick="location.reload()" class="w-full py-5 bg-white text-black font-black text-[10px] uppercase tracking-widest rounded-2xl mt-12 active:scale-95 transition-all">
+            Sincronizar Telemetría
         </button>
-
-        <p class="text-[7px] mt-10 text-center text-zinc-600 uppercase leading-relaxed px-4">
-            <b>Inercia Absoluta V82.5:</b> La señal persiste ante varianza leve. <br>
-            Consulte la telemetría antes de cada exposición.
-        </p>
     </div>
 
     <!-- Sonido de Alerta -->
     <audio id="alert-sound" src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" preload="auto"></audio>
 
     <script>
-        // --- REEMPLAZAR POR TU URL DE NGROK ACTUAL ---
+        // --- PEGA TU URL DE NGROK AQUÍ ---
         const API_URL = "https://cordlike-dylan-unstrenuously.ngrok-free.dev/data";
         
         let audioEnabled = false;
-        let lastSugerencia = "";
+        let lastState = "STOP";
         const alertAudio = document.getElementById('alert-sound');
 
         function toggleAudio() {
             audioEnabled = !audioEnabled;
-            const btn = document.getElementById('audio-toggle');
-            if(audioEnabled) {
-                btn.className = "btn-audio active";
-                alertAudio.play().catch(e => console.log("Audio autorizado"));
-            } else {
-                btn.className = "btn-audio";
-            }
+            document.getElementById('audio-toggle').classList.toggle('active');
+            if(audioEnabled) alertAudio.play().catch(e => {});
         }
 
-        async function updateDashboard() {
+        async function update() {
             try {
                 const response = await fetch(API_URL, {
                     headers: { "ngrok-skip-browser-warning": "69420" }
                 });
-                
-                if (!response.ok) throw new Error('Offline');
                 const d = await response.json();
 
-                // 1. Mapeo de datos (Sincronizado con servidor.py V82.5)
+                // 1. Datos base
                 document.getElementById('val').innerText = (d.ultimo_valor || 0) + 'x';
-                document.getElementById('prob').innerText = d.confianza || "0%";
-                document.getElementById('sug').innerText = d.sugerencia || "ESPERANDO";
-                document.getElementById('tp_s').innerText = d.tp_s || "--";
-                document.getElementById('tp_e').innerText = d.tp_e || "--";
-                document.getElementById('fase').innerText = d.fase || "MONITOREO";
-                document.getElementById('bloqueo').innerText = (d.bloqueo_rondas || 0) + " RONDAS";
+                document.getElementById('sug').innerText = d.sugerencia;
+                document.getElementById('fase').innerText = d.fase;
+                document.getElementById('intentos').innerText = d.intentos_sesion + " / 3";
+                document.getElementById('prob-small').innerText = "IA: " + (d.confianza || "0%");
 
-                // 2. WinRate
-                document.getElementById('stats_s').innerText = `${d.wins_hoy} / ${d.trades_hoy}`;
-                const wr = d.trades_hoy > 0 ? (d.wins_hoy / d.trades_hoy * 100).toFixed(1) : 0;
-                document.getElementById('winrate').innerText = wr + "%";
+                // 2. Lógica del Círculo (GO/STOP)
+                const circle = document.getElementById('circle');
+                const stateText = document.getElementById('state-text');
+                const isGo = d.estado.includes("OK");
 
-                // 3. Alerta Sonora
-                if (audioEnabled && d.sugerencia !== lastSugerencia) {
-                    const s = d.sugerencia;
-                    if (s.includes("RENTABLE") || s.includes("TÁCTICA") || s.includes("OK")) {
-                        alertAudio.play().catch(e => {});
-                    }
-                    lastSugerencia = s;
-                }
-
-                // 4. Cambios visuales dinámicos
-                const panel = document.getElementById('main-panel');
-                const sugText = document.getElementById('sug');
-
-                if(d.sugerencia.includes("RENTABLE")) {
-                    panel.className = "panel p-6 mb-4 text-center status-ok";
-                    sugText.className = "text-xs font-bold uppercase text-green-500";
-                } else if(d.sugerencia.includes("RIESGO ALTO")) {
-                    panel.className = "panel p-6 mb-4 text-center status-risk";
-                    sugText.className = "text-xs font-bold uppercase text-orange-500";
-                } else if(d.sugerencia.includes("🛑") || d.sugerencia.includes("PAUSA")) {
-                    panel.className = "panel p-6 mb-4 text-center status-stop";
-                    sugText.className = "text-xs font-bold uppercase text-red-500";
+                if(isGo) {
+                    circle.className = "status-box bg-ok";
+                    stateText.innerText = "GO";
+                    // Alerta sonora si cambia a GO
+                    if(audioEnabled && lastState === "STOP") alertAudio.play().catch(e => {});
+                    lastState = "GO";
                 } else {
-                    panel.className = "panel p-6 mb-4 text-center";
-                    sugText.className = "text-xs font-bold uppercase text-gray-400";
+                    circle.className = "status-box bg-stop";
+                    stateText.innerText = "STOP";
+                    lastState = "STOP";
                 }
 
             } catch (error) {
-                console.error("Fallo de conexión:", error);
+                console.error("Fallo de telemetría:", error);
             }
         }
 
-        setInterval(updateDashboard, 1000);
-        updateDashboard();
+        setInterval(update, 1000);
+        update();
     </script>
 </body>
 </html>
