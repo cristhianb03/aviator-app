@@ -3,136 +3,158 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>The Gatekeeper Pro - V98</title>
+    <title>Risk Assistant 1.50x - Final Edition</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@700&display=swap');
-        body { font-family: 'JetBrains+Mono', monospace; background: #050608; color: white; }
-        
-        .status-box { 
-            border-radius: 50%; 
-            width: 220px; 
-            height: 220px; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            margin: 30px auto; 
-            border: 6px solid #1a1c23; 
-            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1); 
-        }
-
-        .bg-ok { 
-            background: rgba(34, 197, 94, 0.1); 
-            border-color: #22c55e; 
-            color: #22c55e; 
-            box-shadow: 0 0 40px rgba(34, 197, 94, 0.3); 
-        }
-
-        .bg-stop { 
-            background: rgba(239, 68, 68, 0.1); 
-            border-color: #ef4444; 
-            color: #ef4444; 
-        }
-
-        .glass-card {
-            background: rgba(20, 24, 35, 0.8);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-        }
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;600;900&display=swap');
+        body { font-family: 'Outfit', sans-serif; background: #080a0f; color: white; overflow-x: hidden; }
+        .bg-main { background: radial-gradient(circle at 50% 0%, #1e293b 0%, #080a0f 100%); }
+        .glass-card { background: rgba(15, 18, 25, 0.85); backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.05); }
+        .status-circle { width: 12px; height: 12px; border-radius: 50%; }
+        .pulse-green { animation: pulse-green 2s infinite; }
+        @keyframes pulse-green { 0%, 100% { box-shadow: 0 0 10px #10b981; opacity: 1; } 50% { box-shadow: 0 0 20px #10b981; opacity: 0.6; } }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
     </style>
 </head>
-<body class="flex flex-col items-center p-6 min-h-screen">
+<body class="bg-main min-h-screen flex flex-col items-center">
 
-    <div class="w-full max-w-sm text-center">
-        <!-- Header -->
-        <header class="flex justify-between items-center mb-10 opacity-60">
-            <span class="text-[9px] font-bold tracking-widest uppercase">Sentinel Protocol V98</span>
-            <div class="flex items-center gap-1">
-                <div id="led" class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
-                <span class="text-[9px] font-bold">GCP LIVE</span>
-            </div>
+    <div class="w-full max-w-md p-5">
+        <!-- ENCABEZADO PRINCIPAL -->
+        <header class="text-center py-6 mb-4">
+            <h1 class="text-2xl font-black italic tracking-tighter text-white">ASISTENTE DE RIESGO <span class="text-red-600">1.50x</span></h1>
+            <p class="text-[10px] text-gray-500 uppercase font-bold tracking-[0.2em]">Monitoreo inteligente del mercado en tiempo real</p>
         </header>
-        
-        <p class="text-[10px] text-gray-500 uppercase mb-2 font-bold tracking-widest">Último Resultado</p>
-        <div id="val" class="text-6xl font-bold mb-8">--</div>
 
-        <!-- Círculo de Decisión IA -->
-        <div id="circle" class="status-box bg-stop">
-            <div id="state" class="text-5xl font-black italic tracking-tighter">STOP</div>
-        </div>
-
-        <!-- Caja de Estado Detallado -->
-        <div class="glass-card p-5 rounded-3xl mb-8 shadow-xl">
-            <p id="sug" class="text-sm font-bold uppercase mb-1">ANALIZANDO...</p>
-            <p id="fase" class="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Sincronizando Grafo</p>
-        </div>
-
-        <!-- Estadísticas de Sesión -->
-        <div class="grid grid-cols-2 gap-4">
-            <div class="bg-zinc-900/40 p-4 rounded-2xl border border-white/5">
-                <p class="text-[8px] text-gray-500 font-bold uppercase mb-1">Confianza 1.50x</p>
-                <p id="prob" class="text-xl font-bold text-blue-400">0%</p>
+        <!-- MONITOR DE TELEMETRÍA -->
+        <div class="glass-card rounded-[2.5rem] p-8 shadow-2xl text-center mb-6 relative">
+            <div class="flex justify-center items-center gap-2 mb-4">
+                <div id="led-market" class="status-circle bg-gray-500"></div>
+                <span id="market-status" class="text-[10px] font-black uppercase tracking-widest text-gray-400">Analizando Mercado...</span>
             </div>
-            <div class="bg-zinc-900/40 p-4 rounded-2xl border border-white/5">
-                <p class="text-[8px] text-gray-500 font-bold uppercase mb-1">Intentos Hoy</p>
-                <p id="intentos" class="text-xl font-bold">0 / 5</p>
+
+            <p class="text-gray-600 text-[10px] font-bold uppercase mb-2">Última captura de nodo</p>
+            <div id="val" class="text-8xl font-black mb-8 tracking-tighter text-white">--</div>
+
+            <!-- AUTORIZACIÓN DE ENTRADA -->
+            <div id="auth-box" class="bg-white/5 rounded-3xl p-6 border border-white/5 transition-all duration-500">
+                <p id="auth-title" class="text-lg font-black italic uppercase tracking-wider">Esperando Sincronización</p>
+                <p id="auth-desc" class="text-[9px] text-gray-500 mt-1 uppercase font-bold">Verificando convergencia estadística</p>
             </div>
         </div>
 
-        <button onclick="location.reload()" class="w-full mt-10 py-5 bg-white text-black font-black text-[10px] uppercase tracking-widest rounded-2xl active:scale-95 transition-all shadow-xl">
-            Actualizar Telemetría
-        </button>
+        <!-- INDICADORES DE CONTEXTO -->
+        <div class="grid grid-cols-2 gap-4 mb-6">
+            <div class="glass-card p-5 rounded-3xl">
+                <p class="text-[8px] text-gray-500 font-bold uppercase mb-2">Confianza IA</p>
+                <p id="prob" class="text-2xl font-black text-blue-400">0%</p>
+                <div class="w-full bg-gray-800 h-1 rounded-full mt-2 overflow-hidden">
+                    <div id="bar" class="bg-blue-500 h-full transition-all duration-1000" style="width: 0%"></div>
+                </div>
+            </div>
+            <div class="glass-card p-5 rounded-3xl">
+                <p class="text-[8px] text-gray-500 font-bold uppercase mb-2">Límite de Sesión</p>
+                <p id="intentos" class="text-2xl font-black text-white">0 / 5</p>
+                <p class="text-[7px] text-gray-600 uppercase font-bold mt-1">Sesión Protegida</p>
+            </div>
+        </div>
 
-        <p class="text-[7px] text-zinc-700 uppercase mt-12 leading-relaxed">
-            IA entrenada para objetivo mínimo de 1.50x.<br> 
-            La gestión de capital es responsabilidad del operador.
-        </p>
+        <!-- MOTIVO TÉCNICO -->
+        <div class="glass-card p-4 rounded-2xl border border-white/5 mb-6 flex items-center gap-4">
+            <div class="bg-white/5 p-3 rounded-xl">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+            </div>
+            <div>
+                <p class="text-[8px] text-gray-500 font-bold uppercase">Motivo del diagnóstico</p>
+                <p id="motivo" class="text-[10px] text-gray-300 font-bold uppercase">Calibrando modelo estadístico</p>
+            </div>
+        </div>
+
+        <!-- FRASE FINAL / BRANDING -->
+        <footer class="mt-10 text-center pb-10">
+            <p class="text-[10px] text-gray-600 uppercase font-black tracking-[0.2em] leading-relaxed">
+                No se trata de jugar más.<br>
+                Se trata de jugar cuando el riesgo está a tu favor.
+            </p>
+        </footer>
     </div>
 
     <script>
-        // PEGA TU URL DE NGROK ACTUAL AQUÍ
+        // URL DE NGROK (Asegúrate de que sea la activa)
         const API_URL = "https://cordlike-dylan-unstrenuously.ngrok-free.dev/data";
 
-        async function updateDashboard() {
+        async function update() {
             try {
                 const response = await fetch(API_URL, {
                     headers: { "ngrok-skip-browser-warning": "69420" }
                 });
-                
-                if (!response.ok) throw new Error('Servidor fuera de línea');
                 const d = await response.json();
 
-                // Actualizar Telemetría
+                // 1. Telemetría Básica
                 document.getElementById('val').innerText = (d.ultimo_valor || 0) + 'x';
-                document.getElementById('sug').innerText = d.sugerencia;
-                document.getElementById('fase').innerText = d.fase;
                 document.getElementById('prob').innerText = d.confianza;
+                document.getElementById('bar').style.width = d.confianza;
                 document.getElementById('intentos').innerText = d.intentos_sesion + " / 5";
 
-                const circle = document.getElementById('circle');
-                const stateText = document.getElementById('state');
-                const led = document.getElementById('led');
+                // 2. Mapeo de Estados y Copy Final
+                const led = document.getElementById('led-market');
+                const marketText = document.getElementById('market-status');
+                const authBox = document.getElementById('auth-box');
+                const authTitle = document.getElementById('auth-title');
+                const authDesc = document.getElementById('auth-desc');
+                const motivo = document.getElementById('motivo');
 
-                // Cambios Visuales por Estado
+                // Mapeo de Motivos
+                let textoMotivo = "Falta de confirmación de tendencia";
+                if(d.fase.includes("SUCCIÓN")) textoMotivo = "Mercado en fase de recuperación";
+                if(d.fase.includes("INSUFICIENTE")) textoMotivo = "Falta de confirmación de tendencia";
+                if(d.fase.includes("CRASH")) textoMotivo = "Volatilidad fuera de rango";
+                if(d.fase.includes("DRAWDOWN")) textoMotivo = "Protección de riesgo activa";
+                if(d.fase.includes("VALIDADO")) textoMotivo = "Condiciones de salida validadas";
+                
+                motivo.innerText = d.sugerencia.includes("IA") ? "Calibrando modelo estadístico" : textoMotivo;
+
+                // Mapeo de Botón y Colores
                 if(d.estado.includes("OK")) {
-                    circle.className = "status-box bg-ok";
-                    stateText.innerText = "GO";
+                    // ESTADO VERDE
+                    led.className = "status-circle bg-green-500 pulse-green";
+                    marketText.innerText = "Mercado estable";
+                    marketText.className = "text-[10px] font-black uppercase tracking-widest text-green-500";
+                    authBox.className = "bg-green-600/20 rounded-3xl p-6 border border-green-500 shadow-lg";
+                    authTitle.innerText = "✅ Entrada Autorizada";
+                    authTitle.className = "text-lg font-black italic uppercase text-green-400";
+                    authDesc.innerText = "ENTRADA 1.50x AUTORIZADA";
+                    authDesc.className = "text-[9px] text-green-600 mt-1 uppercase font-bold";
+                } else if(d.sugerencia.includes("IA")) {
+                    // ESTADO CALIBRACIÓN
+                    led.className = "status-circle bg-blue-500";
+                    marketText.innerText = "Sincronizando IA";
+                    authTitle.innerText = "Calibrando...";
                 } else {
-                    circle.className = "status-box bg-stop";
-                    stateText.innerText = "STOP";
+                    // ESTADO ROJO / BLOQUEADO
+                    led.className = "status-circle bg-red-600";
+                    marketText.innerText = "Mercado de alto riesgo";
+                    marketText.className = "text-[10px] font-black uppercase tracking-widest text-red-500";
+                    authBox.className = "bg-red-600/10 rounded-3xl p-6 border border-red-600/30";
+                    authTitle.innerText = "❌ Entrada No Autorizada";
+                    authTitle.className = "text-lg font-black italic uppercase text-red-500";
+                    authDesc.innerText = "El riesgo actual no cumple criterios";
+                    authDesc.className = "text-[9px] text-red-700 mt-1 uppercase font-bold";
                 }
 
-                led.className = "w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse";
+                // Casos especiales de bloqueo
+                if(d.sugerencia.includes("STOP") || d.fase.includes("SESIÓN")) {
+                    authTitle.innerText = "🔒 Sesión Protegida";
+                    authDesc.innerText = "Límite de sesión alcanzado";
+                }
 
-            } catch (error) {
-                console.error("Error de conexión:", error);
-                document.getElementById('led').className = "w-1.5 h-1.5 bg-red-600 rounded-full";
-                document.getElementById('sug').innerText = "⚠️ RECONECTANDO...";
+            } catch(e) { 
+                document.getElementById('market-status').innerText = "⚠️ Error de Enlace";
             }
         }
-
-        setInterval(updateDashboard, 1000);
-        updateDashboard();
+        setInterval(update, 1000);
+        update();
     </script>
 </body>
 </html>
